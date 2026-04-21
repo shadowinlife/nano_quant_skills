@@ -34,11 +34,12 @@ user-invocable: true
 2. 只取年报，即 end_date 月份为 12、日期为 31。
 3. 仅使用分析日之前已经可见的数据。
 4. 现金流覆盖度：经营现金流 vs 投资现金流、筹资现金流。
-5. 有息负债水平：interestdebt、st_borr + lt_borr + bond_payable + lease_liab。
-6. 偿债能力指标：current_ratio、quick_ratio、cash_ratio、debt_to_assets、debt_to_eqt、ebit_to_interest。
-7. 现金流质量：ocf_to_debt、ocf_to_shortdebt、ocf_to_interestdebt。
-8. 杠杆趋势：assets_to_eqt 逐年变化。
-9. 金融类公司不适用；如果 comp_type 属于银行、保险、证券，直接返回 not-applicable。
+5. **CapEx 覆盖度：`ocf_minus_capex = n_cashflow_act - c_pay_acq_const_fiolta`；若 ≥0 标记 `ocf_covers_capex=true`。summary 输出 `ocf_covers_capex_years` / `ocf_covers_capex_samples`。**
+6. 有息负债水平：interestdebt、st_borr + lt_borr + bond_payable + lease_liab。
+7. 偿债能力指标：current_ratio、quick_ratio、cash_ratio、debt_to_assets、debt_to_eqt、ebit_to_interest。
+8. 现金流质量：ocf_to_debt、ocf_to_shortdebt、ocf_to_interestdebt。
+9. 杠杆趋势：assets_to_eqt 逐年变化，字面值为 `rising | declining | stable | insufficient-data`（orchestrator 同时接受 `rising` 与历史遗留的 `deteriorating`）。
+10. 金融类公司不适用；如果 comp_type 属于银行、保险、证券，直接返回 not-applicable。
 
 ### 第二层：隐性负债取证（human-in-loop）
 

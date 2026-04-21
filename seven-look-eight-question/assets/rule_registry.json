@@ -21,13 +21,21 @@
         "grossprofit_margin",
         "netprofit_margin",
         "profit_to_gr",
-        "n_cashflow_act"
+        "n_cashflow_act",
+        "n_income_attr_p",
+        "c_pay_acq_const_fiolta",
+        "net_profit_cash_ratio",
+        "fcf",
+        "net_profit_cash_ratio_avg",
+        "net_profit_cash_ratio_below_one_years",
+        "fcf_positive_years",
+        "grossprofit_margin_declining_3y"
       ],
       "missing_data": [],
       "script": "look-01-profit-quality/scripts/look_01_profit_quality.py",
       "test_status": "passed",
       "review_status": "reviewed",
-      "notes": "时间窗口默认最近3年，支持人工覆盖。仅取report_type=1合并报表。年报规则为end_date=12-31。营收同时展示revenue与total_revenue。净利率字段按年报去重后的数据质量比较后优先使用netprofit_margin，行级缺失时fallback到profit_to_gr。fin_indicator按最新ann_date_key/ann_date去重。调用时先检测公司类型，金融类公司提示不适用。已拆分为独立 skill：look-01-profit-quality。"
+      "notes": "时间窗口默认最近3年，支持人工覆盖。仅取report_type=1合并报表。年报规则为end_date=12-31。2026-04-21 B1 升级：补齐框架要求的净现比 net_profit_cash_ratio = n_cashflow_act / n_income_attr_p（只在 n_income_attr_p>0 的年份纳入平均）、自由现金流 fcf = n_cashflow_act - c_pay_acq_const_fiolta（强口径），以及毛利率连续≥3年下降监测 grossprofit_margin_declining_3y。扣分规则在 orchestrator: 净现比均值<0.5 critical、任何年<1 warning、FCF 全负 critical、毛利率连续下降 warning。调用时先检测公司类型，金融类公司提示不适用。"
     },
     {
       "rule_id": "look-02",
@@ -127,6 +135,10 @@
       "derived_metrics": [
         "ocf_covers_investing",
         "fcf",
+        "c_pay_acq_const_fiolta",
+        "ocf_minus_capex",
+        "ocf_covers_capex",
+        "ocf_covers_capex_years",
         "interestdebt",
         "current_ratio",
         "debt_to_assets",
@@ -138,7 +150,7 @@
       "script": "look-05-balance-sheet-health/scripts/look_05_balance_sheet_health.py",
       "test_status": "passed",
       "review_status": "reviewed",
-      "notes": "分析经营现金流覆盖、有息负债、偿债能力、资产负债率、隐性负债。隐性负债需要年报附注全文（human-in-loop）。金融类公司不适用。已拆分为独立 skill：look-05-balance-sheet-health。"
+      "notes": "分析经营现金流覆盖、有息负债、偿债能力、资产负债率、隐性负债。2026-04-21 B2 升级：新增 OCF 覆盖资本开支检测 ocf_minus_capex = n_cashflow_act - c_pay_acq_const_fiolta，summary 输出 ocf_covers_capex_years / ocf_covers_capex_samples，扣分规则 orchestrator: 0 年覆盖 critical、<半数 warning。隐性负债仍需要年报附注全文（human-in-loop）。金融类公司不适用。"
     },
     {
       "rule_id": "look-06",
@@ -147,23 +159,34 @@
       "title": "六看投入产出效率",
       "status": "implemented",
       "parallel_lane": "core",
-      "data_status": "all-fields-present",
+      "data_status": "structured-fields-present-headcount-human-loop",
       "tables": [
         "fin_income",
         "fin_balance",
-        "fin_indicator"
+        "fin_cashflow",
+        "fin_indicator",
+        "idx_sw_l3_peers",
+        "stk_factor_pro"
       ],
       "derived_metrics": [
         "wc_per_revenue",
         "fix_assets_per_revenue",
         "revenue_per_labor_cost",
-        "wc_trend"
+        "profit_per_labor_cost",
+        "wc_trend",
+        "revenue_per_employee",
+        "profit_per_employee",
+        "avg_labor_cost_per_employee",
+        "per_capita_status",
+        "per_capita_years_covered"
       ],
-      "missing_data": [],
+      "missing_data": [
+        "employee_count"
+      ],
       "script": "look-06-input-output-efficiency/scripts/look_06_input_output_efficiency.py",
       "test_status": "passed",
       "review_status": "reviewed",
-      "notes": "分析营运资金/收入、固定资产/收入、人均投入产出，含行业基准对标。金融类公司不适用。已拆分为独立 skill：look-06-input-output-efficiency。"
+      "notes": "分析营运资金/收入、固定资产/收入、人均投入产出，含行业基准对标。2026-04-21 B3 升级：DuckDB 无员工总数字段，默认 revenue/c_paid_to_for_empl 只是单位人力成本产出，不能替代人均口径。脚本新增 --employee-count-bundle 参数（人工从年报员工情况章节抄录 JSON）；未提供时 summary.per_capita_status = human-in-loop-required，脚本整体 status=partial，并在 human_in_loop_requests 列出缺口年份。禁止用任何代理公式估算 employee_count。缺数据本身不扣分，仅通过 human-in-loop 推动补齐。金融类公司不适用。"
     },
     {
       "rule_id": "look-07",

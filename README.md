@@ -12,7 +12,7 @@
 | [look-03-growth-trend](look-03-growth-trend/) | 三看：增长率趋势 — 营收/净利润 CAGR、内生 vs 并购增长信号 | `look_03_growth_trend.py` |
 | [look-04-business-market-distribution](look-04-business-market-distribution/) | 四看：业务构成与市场分布 — 主营占比、海外销售、客户集中度（需年报文本） | `look_04_business_market_distribution.py` |
 | [look-05-balance-sheet-health](look-05-balance-sheet-health/) | 五看：资产负债健康度 — 现金流覆盖、有息负债、偿债能力、隐性负债（需年报附注） | `look_05_balance_sheet_health.py` |
-| [look-06-input-output-efficiency](look-06-input-output-efficiency/) | 六看：投入产出效率 — 营运资金/收入、固定资产效率、人均投入产出 | `look_06_input_output_efficiency.py` |
+| [look-06-input-output-efficiency](look-06-input-output-efficiency/) | 六看：投入产出效率 — 营运资金/收入、固定资产效率、人均投入产出（真实人均需用户提供员工总数） | `look_06_input_output_efficiency.py` |
 | [look-07-roe-capital-return](look-07-roe-capital-return/) | 七看：收益率与资本回报 — ROE 杜邦三要素拆解、驱动类型、趋势 | `look_07_roe_capital_return.py` |
 | [seven-look-eight-question](seven-look-eight-question/) | **七看一键编排** — 顺序执行 7 个维度、汇总红旗、评分、生成行动建议 | `run_seven_looks.py` |
 
@@ -119,6 +119,9 @@ python seven-look-eight-question/scripts/run_seven_looks.py \
 | `--output-dir` | 中间 JSON 保存目录 | 系统临时目录 |
 | `--report-bundle-04` | look-04 年报文本路径（可选） | — |
 | `--report-bundle-05` | look-05 年报附注路径（可选） | — |
+| `--employee-count-bundle-06` | look-06 员工总数 JSON，格式 `[{ts_code, year, employee_count}]`，未提供时 look-06 返回 `human-in-loop-required`（可选） | — |
+
+注：若未提供 `--employee-count-bundle-06`，look-06 会在 `human_in_loop_requests` 中给出缺数据年份清单，要求人工从年报「员工情况」章节抄录真实员工总数；禁止用任何代理公式估算。在 status 层这属于 `partial`，不扣质量分。
 
 **质量评分规则：** 基础 100 分，严重红旗 −15，一般预警 −5。等级：A(≥80) / B(60-79) / C(40-59) / D(<40)。
 

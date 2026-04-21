@@ -47,6 +47,62 @@ def _object_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Employee-count bundle (human-in-loop input)
+# ---------------------------------------------------------------------------
+
+def _load_employee_bundle(path: Path | None) -> dict[tuple[str, int], int]:
+    """Load user-provided employee counts. Format:
+
+    [
+      {"ts_code": "600660.SH", "year": 2025, "employee_count": 33000},
+      ...
+    ]
+
+    Returns a dict keyed by (ts_code_upper, year) → employee_count.
+
+    Only real headcount values are accepted. Proxy values (e.g. wages / avg-salary)
+    MUST NOT be inserted here; if the user does not have real data they should
+    leave the bundle empty and accept the ``human-in-loop-required`` status.
+    """
+    if path is None:
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    entries = payload.get("employee_counts") if isinstance(payload, dict) else payload
+    if not isinstance(entries, list):
+        raise ValueError(
+            "Employee-count bundle must be a list or an object with an 'employee_counts' field"
+        )
+    mapping: dict[tuple[str, int], int] = {}
+    for item in entries:
+        if not isinstance(item, dict):
+            raise ValueError("Each employee-count entry must be an object")
+        ts_code = str(item.get("ts_code") or "").strip().upper()
+        if not ts_code:
+            raise ValueError("Each employee-count entry must contain ts_code")
+        try:
+            year = int(str(item.get("year")).strip())
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Each employee-count entry must contain a valid integer year, got: {item.get('year')!r}"
+            ) from exc
+        count_value = item.get("employee_count")
+        if count_value is None:
+            raise ValueError("Each employee-count entry must contain employee_count")
+        try:
+            count = int(count_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"employee_count must be an integer, got: {count_value!r}"
+            ) from exc
+        if count <= 0:
+            raise ValueError(
+                f"employee_count must be a positive integer, got: {count}"
+            )
+        mapping[(ts_code, year)] = count
+    return mapping
+
+
+# ---------------------------------------------------------------------------
 # Data fetching
 # ---------------------------------------------------------------------------
 
@@ -326,8 +382,20 @@ def _fetch_peer_industry_info(
 # Compute efficiency metrics
 # ---------------------------------------------------------------------------
 
-def _compute_efficiency(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Compute WC/revenue, fix_assets/revenue, labor productivity for each year."""
+def _compute_efficiency(
+    rows: list[dict[str, Any]],
+    employee_bundle: dict[tuple[str, int], int] | None = None,
+    ts_code: str | None = None,
+) -> list[dict[str, Any]]:
+    """Compute WC/revenue, fix_assets/revenue, labor productivity for each year.
+
+    If ``employee_bundle`` + ``ts_code`` provided, also compute real
+    ``revenue_per_employee`` and ``profit_per_employee``. Otherwise the per-capita
+    fields are kept ``None`` and the caller must surface the data gap as
+    human-in-loop.
+    """
+    employee_bundle = employee_bundle or {}
+    ts_code_key = (ts_code or "").strip().upper()
     results = []
     for row in rows:
         ar = _float_or_none(row.get("accounts_receiv"))
@@ -354,6 +422,26 @@ def _compute_efficiency(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rev_per_labor = _safe_div(rev, labor)
         profit_per_labor = _safe_div(profit, labor)
 
+        # Real per-capita metrics (only if user provided headcount)
+        employee_count: int | None = None
+        year_value = None
+        end_date_value = row.get("end_date")
+        if isinstance(end_date_value, date):
+            year_value = end_date_value.year
+        elif end_date_value:
+            try:
+                year_value = int(str(end_date_value)[:4])
+            except ValueError:
+                year_value = None
+        if ts_code_key and year_value is not None:
+            employee_count = employee_bundle.get((ts_code_key, year_value))
+
+        revenue_per_employee = _safe_div(rev, employee_count) if employee_count else None
+        profit_per_employee = _safe_div(profit, employee_count) if employee_count else None
+        avg_labor_cost_per_employee = (
+            _safe_div(labor, employee_count) if employee_count else None
+        )
+
         results.append({
             "end_date": row["end_date"],
             "revenue": rev,
@@ -365,6 +453,12 @@ def _compute_efficiency(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "c_paid_to_for_empl": labor,
             "revenue_per_labor_cost": rev_per_labor,
             "profit_per_labor_cost": profit_per_labor,
+            # True per-capita metrics (only populated when the user supplies a
+            # verified employee count for that (ts_code, year)).
+            "employee_count": employee_count,
+            "revenue_per_employee": revenue_per_employee,
+            "profit_per_employee": profit_per_employee,
+            "avg_labor_cost_per_employee": avg_labor_cost_per_employee,
         })
     return results
 
@@ -382,6 +476,9 @@ def _build_summary(
             "wc_per_revenue_latest": None,
             "fix_assets_per_revenue_latest": None,
             "revenue_per_labor_cost_latest": None,
+            "revenue_per_employee_latest": None,
+            "profit_per_employee_latest": None,
+            "per_capita_status": "human-in-loop-required",
             "wc_trend": "insufficient-data",
         }
 
@@ -407,6 +504,16 @@ def _build_summary(
     else:
         wc_trend = "insufficient-data"
 
+    # Per-capita status: ready only if every year in the window has a real
+    # employee_count; partial if some years covered; otherwise human-in-loop.
+    years_with_emp = sum(1 for r in eff_rows if r.get("employee_count") is not None)
+    if years_with_emp == len(eff_rows):
+        per_capita_status = "ready"
+    elif years_with_emp > 0:
+        per_capita_status = "partial"
+    else:
+        per_capita_status = "human-in-loop-required"
+
     return {
         "years_returned": len(eff_rows),
         "latest_end_date": (
@@ -416,6 +523,10 @@ def _build_summary(
         "wc_per_revenue_latest": latest.get("wc_per_revenue"),
         "fix_assets_per_revenue_latest": latest.get("fix_assets_per_revenue"),
         "revenue_per_labor_cost_latest": latest.get("revenue_per_labor_cost"),
+        "revenue_per_employee_latest": latest.get("revenue_per_employee"),
+        "profit_per_employee_latest": latest.get("profit_per_employee"),
+        "per_capita_status": per_capita_status,
+        "per_capita_years_covered": years_with_emp,
         "wc_trend": wc_trend,
     }
 
@@ -489,6 +600,7 @@ def _render_markdown(
     benchmark: dict[str, Any] | None,
     bench_eff: list[dict[str, Any]],
     comparison: list[dict[str, Any]],
+    human_in_loop_requests: list[str] | None = None,
 ) -> str:
     lines = [
         "# look-06 Input-Output Efficiency",
@@ -507,7 +619,24 @@ def _render_markdown(
     lines.append(f"- wc_per_revenue_latest: {_fmt(summary.get('wc_per_revenue_latest'))}")
     lines.append(f"- fix_assets_per_revenue_latest: {_fmt(summary.get('fix_assets_per_revenue_latest'))}")
     lines.append(f"- revenue_per_labor_cost_latest: {_fmt(summary.get('revenue_per_labor_cost_latest'))}")
+    lines.append(f"- per_capita_status: {summary.get('per_capita_status')}")
+    lines.append(f"- revenue_per_employee_latest: {_fmt(summary.get('revenue_per_employee_latest'))}")
+    lines.append(f"- profit_per_employee_latest: {_fmt(summary.get('profit_per_employee_latest'))}")
     lines.append(f"- wc_trend: {summary['wc_trend']}")
+
+    # Per-capita 状态提示
+    if summary.get("per_capita_status") in ("human-in-loop-required", "partial"):
+        lines.append("")
+        lines.append(
+            "> ⚠️ 真实「人均营收 / 人均利润」需要年报员工总数。当前"
+            + (
+                "全部"
+                if summary.get("per_capita_status") == "human-in-loop-required"
+                else "部分"
+            )
+            + "年份未提供 employee_count，已跳过真实人均口径；"
+            "`revenue_per_labor_cost` 仅代表「单位人力成本产出」，不能替代人均指标。"
+        )
 
     # Efficiency table
     lines.extend(["", "## Efficiency Metrics", ""])
@@ -515,6 +644,7 @@ def _render_markdown(
         "end_date", "revenue", "working_capital", "wc_per_revenue",
         "fix_assets", "fix_assets_per_revenue",
         "c_paid_to_for_empl", "revenue_per_labor_cost", "profit_per_labor_cost",
+        "employee_count", "revenue_per_employee", "profit_per_employee",
     ]
     lines.append("| " + " | ".join(eff_cols) + " |")
     lines.append("|" + "|".join("---" for _ in eff_cols) + "|")
@@ -552,6 +682,11 @@ def _render_markdown(
     else:
         lines.append("- benchmark: not available (no SW L3 peers or market cap data)")
 
+    if human_in_loop_requests:
+        lines.extend(["", "## Human-in-Loop Requests", ""])
+        for i, req in enumerate(human_in_loop_requests, 1):
+            lines.append(f"{i}. {req}")
+
     return "\n".join(lines)
 
 
@@ -567,8 +702,16 @@ def _render_json(
     benchmark: dict[str, Any] | None,
     bench_eff: list[dict[str, Any]],
     comparison: list[dict[str, Any]],
+    human_in_loop_requests: list[str],
 ) -> str:
-    status = "ready" if summary["years_returned"] > 0 else "no-data"
+    per_capita_status = summary.get("per_capita_status", "human-in-loop-required")
+    if summary["years_returned"] == 0:
+        status = "no-data"
+    elif per_capita_status == "human-in-loop-required":
+        # 数据库拿到了结构化 WC / 固定资产指标，但人均口径需要用户补数据。
+        status = "partial"
+    else:
+        status = "ready"
 
     payload = {
         "rule_id": "look-06",
@@ -584,6 +727,7 @@ def _render_json(
         "benchmark": benchmark,
         "benchmark_efficiency_rows": _serialize_rows(bench_eff),
         "comparison": _serialize_rows(comparison),
+        "human_in_loop_requests": human_in_loop_requests,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
 
@@ -600,6 +744,15 @@ def main() -> None:
     parser.add_argument("--as-of-date", default=None)
     parser.add_argument("--lookback-years", type=int, default=3)
     parser.add_argument("--db-path", default=str(default_db_path()))
+    parser.add_argument(
+        "--employee-count-bundle",
+        default=None,
+        help=(
+            "JSON 文件，人工提供真实员工人数，用于计算人均营收/利润。"
+            " 格式: [{\"ts_code\":\"600660.SH\",\"year\":2025,\"employee_count\":33000}]。"
+            " 禁止填写代理值（如工资/平均薪酬）。未提供时脚本返回 human-in-loop-required。"
+        ),
+    )
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     args = parser.parse_args()
 
@@ -608,6 +761,15 @@ def main() -> None:
 
     as_of_date = parse_date(args.as_of_date)
     db_path = Path(args.db_path).expanduser().resolve()
+
+    employee_bundle_path = (
+        Path(args.employee_count_bundle).expanduser().resolve()
+        if args.employee_count_bundle
+        else None
+    )
+    if employee_bundle_path is not None and not employee_bundle_path.exists():
+        raise SystemExit(f"--employee-count-bundle file not found: {employee_bundle_path}")
+    employee_bundle = _load_employee_bundle(employee_bundle_path)
 
     with connect_read_only(db_path) as con:
         profile = detect_company_profile(con, args.stock, as_of_date)
@@ -648,22 +810,40 @@ def main() -> None:
             bench_raw = _fetch_efficiency_inputs(con, benchmark["ts_code"], as_of_date, args.lookback_years)
 
     # Compute
-    eff_rows = _compute_efficiency(raw_rows)
-    bench_eff = _compute_efficiency(bench_raw)
+    eff_rows = _compute_efficiency(raw_rows, employee_bundle, args.stock)
+    bench_eff = _compute_efficiency(bench_raw, employee_bundle, benchmark["ts_code"] if benchmark else None)
     summary = _build_summary(eff_rows)
     comparison = _build_comparison(eff_rows, bench_eff) if benchmark else []
+
+    # Human-in-loop requests (人均口径数据缺口)
+    human_in_loop_requests: list[str] = []
+    per_capita_status = summary.get("per_capita_status")
+    if per_capita_status in ("human-in-loop-required", "partial"):
+        missing_years = [
+            (r["end_date"].year if isinstance(r["end_date"], date) else str(r["end_date"])[:4])
+            for r in eff_rows
+            if r.get("employee_count") is None
+        ]
+        years_str = ", ".join(str(y) for y in missing_years)
+        human_in_loop_requests.append(
+            "请提供以下年度的真实员工总数（来源：年报「员工情况」章节的在岗员工数合计），"
+            f"目标股票 {args.stock}，缺口年份：[{years_str}]。"
+            " 通过 --employee-count-bundle 传入 JSON："
+            " [{\"ts_code\":\"" + args.stock + "\",\"year\":YYYY,\"employee_count\":N}]。"
+            " 禁止使用 `c_paid_to_for_empl / 假设年薪` 等代理估算。"
+        )
 
     if args.format == "json":
         print(_render_json(
             args.stock, as_of_date, args.lookback_years, profile,
             industry_info, eff_rows, turnover_rows, summary,
-            benchmark, bench_eff, comparison,
+            benchmark, bench_eff, comparison, human_in_loop_requests,
         ))
     else:
         print(_render_markdown(
             args.stock, as_of_date, args.lookback_years, profile,
             industry_info, eff_rows, turnover_rows, summary,
-            benchmark, bench_eff, comparison,
+            benchmark, bench_eff, comparison, human_in_loop_requests,
         ))
 
 

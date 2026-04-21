@@ -32,13 +32,17 @@ user-invocable: true
 4. 营收同时展示 revenue 与 total_revenue。
 5. fin_indicator 按最新 COALESCE(ann_date_key, ann_date, end_date) 与 ann_date 去重后再参与分析。
 6. 净利率字段优先使用 netprofit_margin，如覆盖率更差则切换为 profit_to_gr；行级缺失时允许 fallback。
-7. 金融类公司不适用；如果 comp_type 属于银行、保险、证券，直接返回 not-applicable。
+7. **净现比 `net_profit_cash_ratio = n_cashflow_act / n_income_attr_p`，理想值 ≥ 1；仅在归母净利润为正的年份纳入平均。**
+8. **自由现金流 `fcf = n_cashflow_act - c_pay_acq_const_fiolta`（经营现金流扣除购建固定资产/无形资产/其他长期资产支付的现金）。**
+9. **毛利率趋势：按时间正序严格单调下降 ≥3 年 → `grossprofit_margin_declining_3y=true`。**
+10. 金融类公司不适用；如果 comp_type 属于银行、保险、证券，直接返回 not-applicable。
 
 ## 核心证据
 
 - 营收：revenue, total_revenue
-- 利润：profit_dedt, grossprofit_margin, netprofit_margin, profit_to_gr
-- 现金流：n_cashflow_act
+- 利润：n_income_attr_p, profit_dedt, grossprofit_margin, netprofit_margin, profit_to_gr
+- 现金流：n_cashflow_act, c_pay_acq_const_fiolta
+- 派生：net_profit_cash_ratio, fcf
 - 增长字段：tr_yoy, or_yoy, dt_netprofit_yoy, ocf_yoy
 
 ## 执行实现
@@ -53,6 +57,9 @@ user-invocable: true
 - 缺失值统计
 - 扣非利润为正的年份数
 - 经营现金流为正的年份数
+- 自由现金流为正的年份数
+- 净现比平均值 & 低于 1 的年份数
+- 毛利率是否连续 3 年下滑
 - 如不适用，则明确给出原因
 
 ## 何时暂停并讨论

@@ -87,7 +87,7 @@ LOOK_SPECS: list[dict[str, Any]] = [
         "skill_dir": "look-06-input-output-efficiency",
         "script": "look_06_input_output_efficiency.py",
         "default_lookback": 3,
-        "extra_args_key": None,
+        "extra_args_key": "employee_count_bundle_06",
     },
     {
         "rule_id": "look-07",
@@ -176,7 +176,7 @@ def _run_look(
         "--format", "json",
     ]
 
-    # Add extra arguments (report-bundle for look-04/05)
+    # Add extra arguments (report-bundle for look-04/05, employee-count-bundle for look-06)
     extra_key = spec.get("extra_args_key")
     if extra_key and extra_args.get(extra_key):
         bundle_path = extra_args[extra_key]
@@ -184,6 +184,8 @@ def _run_look(
             cmd.extend(["--report-bundle", bundle_path])
         elif spec["rule_id"] == "look-05":
             cmd.extend(["--report-bundle", bundle_path])
+        elif spec["rule_id"] == "look-06":
+            cmd.extend(["--employee-count-bundle", bundle_path])
 
     try:
         result = subprocess.run(
@@ -243,6 +245,34 @@ def _extract_flags_01(data: dict[str, Any]) -> list[tuple[str, str]]:
             flags.append(("经营现金流连续为负", "critical"))
         elif ocf_positive < total_years:
             flags.append((f"经营现金流仅{ocf_positive}/{total_years}年为正", "warning"))
+
+    # 净现比质量：平均 < 0.5 critical；任一年 < 1 warning
+    npcr_avg = summary.get("net_profit_cash_ratio_avg")
+    npcr_below = summary.get("net_profit_cash_ratio_below_one_years") or 0
+    npcr_samples = summary.get("net_profit_cash_ratio_samples") or 0
+    if npcr_avg is not None and npcr_samples > 0:
+        if npcr_avg < 0.5:
+            flags.append(
+                (f"净现比均值仅{npcr_avg:.2f}（<0.5），利润未落地为现金", "critical")
+            )
+        elif npcr_below > 0:
+            flags.append(
+                (f"净现比有{npcr_below}/{npcr_samples}年<1，利润含金量不足", "warning")
+            )
+
+    # 自由现金流
+    fcf_positive = summary.get("fcf_positive_years")
+    if fcf_positive is not None and total_years > 0:
+        if fcf_positive == 0:
+            flags.append(("自由现金流连续为负，公司持续失血", "critical"))
+        elif fcf_positive < total_years:
+            flags.append(
+                (f"自由现金流仅{fcf_positive}/{total_years}年为正", "warning")
+            )
+
+    # 毛利率趋势
+    if summary.get("grossprofit_margin_declining_3y"):
+        flags.append(("毛利率连续≥3年下滑", "warning"))
 
     return flags
 
@@ -305,6 +335,19 @@ def _extract_flags_05(data: dict[str, Any]) -> list[tuple[str, str]]:
         dta = latest.get("debt_to_assets")
         if dta is not None and dta > 80:
             flags.append((f"资产负债率极高（{dta:.1f}%）", "critical"))
+
+    # OCF 覆盖 CapEx：全负/半数以下均要报警
+    capex_covers = summary.get("ocf_covers_capex_years")
+    capex_samples = summary.get("ocf_covers_capex_samples") or 0
+    if capex_covers is not None and capex_samples > 0:
+        if capex_covers == 0:
+            flags.append(
+                (f"最近{capex_samples}年经营现金流均无法覆盖资本开支，靠筹资续命", "critical")
+            )
+        elif capex_covers < capex_samples / 2:
+            flags.append(
+                (f"经营现金流仅{capex_covers}/{capex_samples}年能覆盖资本开支", "warning")
+            )
 
     hidden_status = summary.get("hidden_liability_status", "")
     if hidden_status == "human-in-loop-required":
@@ -545,6 +588,18 @@ def _collect_human_requests(results: dict[str, dict[str, Any]]) -> list[dict[str
                 "rule_id": "look-05",
                 "request": "请提供目标公司最近3年年报附注全文文本（JSON格式），用于提取隐性负债（对外担保、表外融资等）证据。",
             })
+
+    # Look-06: per-capita headcount
+    r06 = results.get("look-06", {})
+    per_capita_status = _summary_dict(r06).get("per_capita_status", "")
+    if per_capita_status in ("human-in-loop-required", "partial") or r06.get("status") == "partial":
+        human_reqs = r06.get("human_in_loop_requests", [])
+        if isinstance(human_reqs, list) and human_reqs:
+            for req in human_reqs:
+                requests.append({
+                    "rule_id": "look-06",
+                    "request": req if isinstance(req, str) else str(req),
+                })
 
     return requests
 
@@ -848,6 +903,14 @@ def main() -> None:
                         help="look-04 年报全文文本包（JSON）")
     parser.add_argument("--report-bundle-05", default=None,
                         help="look-05 年报附注文本包（JSON）")
+    parser.add_argument(
+        "--employee-count-bundle-06",
+        default=None,
+        help=(
+            "look-06 员工总数 JSON（人工从年报「员工情况」抄录）。"
+            " 未提供时 look-06 会在 human_in_loop_requests 中要求补数据。"
+        ),
+    )
     parser.add_argument("--output-dir", default=None,
                         help="中间文件输出目录（不设则使用临时目录）")
     parser.add_argument("--final-output", default=None,
@@ -870,6 +933,7 @@ def main() -> None:
     extra_args = {
         "report_bundle_04": args.report_bundle_04,
         "report_bundle_05": args.report_bundle_05,
+        "employee_count_bundle_06": args.employee_count_bundle_06,
     }
 
     # Phase 1 & 2: Run all 7 looks

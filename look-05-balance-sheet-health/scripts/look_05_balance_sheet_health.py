@@ -151,7 +151,8 @@ def _fetch_balance_cashflow(
             c.n_cashflow_inv_act,
             c.n_cash_flows_fnc_act,
             c.free_cashflow,
-            c.c_cash_equ_end_period
+            c.c_cash_equ_end_period,
+            c.c_pay_acq_const_fiolta
         FROM fin_cashflow c
         CROSS JOIN params p
         WHERE c.ts_code = p.ts_code
@@ -168,6 +169,7 @@ def _fetch_balance_cashflow(
             c.n_cash_flows_fnc_act,
             c.free_cashflow,
             c.c_cash_equ_end_period,
+            c.c_pay_acq_const_fiolta,
             ROW_NUMBER() OVER (
                 PARTITION BY b.ts_code, b.end_date
                 ORDER BY b.visible_date DESC
@@ -206,7 +208,8 @@ def _fetch_balance_cashflow(
         n_cashflow_inv_act,
         n_cash_flows_fnc_act,
         free_cashflow,
-        c_cash_equ_end_period
+        c_cash_equ_end_period,
+        c_pay_acq_const_fiolta
     FROM ranked
     WHERE rn <= (SELECT lookback_years FROM params)
     ORDER BY end_date DESC
@@ -347,6 +350,7 @@ def _compute_cashflow_coverage(rows: list[dict[str, Any]]) -> list[dict[str, Any
         ocf = _float_or_none(row.get("n_cashflow_act"))
         icf = _float_or_none(row.get("n_cashflow_inv_act"))
         fcf_fnc = _float_or_none(row.get("n_cash_flows_fnc_act"))
+        capex = _float_or_none(row.get("c_pay_acq_const_fiolta"))
 
         ocf_covers_inv = None
         if ocf is not None and icf is not None and icf != 0:
@@ -356,12 +360,22 @@ def _compute_cashflow_coverage(rows: list[dict[str, Any]]) -> list[dict[str, Any
         if ocf is not None and icf is not None and fcf_fnc is not None:
             ocf_covers_all = ocf + icf + fcf_fnc
 
+        # CapEx 覆盖：OCF - 购建固定/无形资产支付现金。正值表示自有现金能覆盖资本开支。
+        ocf_minus_capex = None
+        ocf_covers_capex = None
+        if ocf is not None and capex is not None:
+            ocf_minus_capex = ocf - capex
+            ocf_covers_capex = ocf_minus_capex >= 0
+
         coverage.append({
             "end_date": row["end_date"],
             "n_cashflow_act": ocf,
             "n_cashflow_inv_act": icf,
             "n_cash_flows_fnc_act": fcf_fnc,
             "free_cashflow": _float_or_none(row.get("free_cashflow")),
+            "c_pay_acq_const_fiolta": capex,
+            "ocf_minus_capex": ocf_minus_capex,
+            "ocf_covers_capex": ocf_covers_capex,
             "ocf_plus_icf": ocf_covers_inv,
             "ocf_covers_investing": ocf_covers_inv is not None and ocf_covers_inv >= 0,
             "net_cash_change": ocf_covers_all,
@@ -522,6 +536,8 @@ def _build_summary(
             "ocf_positive_years": 0,
             "fcf_positive_years": 0,
             "ocf_covers_investing_years": 0,
+            "ocf_covers_capex_years": 0,
+            "ocf_covers_capex_samples": 0,
             "leverage_trend": "unknown",
             "hidden_liability_status": hidden_result["status"],
         }
@@ -532,6 +548,12 @@ def _build_summary(
     ocf_pos = sum(1 for c in cashflow_coverage if (c["n_cashflow_act"] or 0) > 0)
     fcf_pos = sum(1 for c in cashflow_coverage if (c["free_cashflow"] or 0) > 0)
     ocf_covers = sum(1 for c in cashflow_coverage if c["ocf_covers_investing"])
+    ocf_covers_capex_years = sum(
+        1 for c in cashflow_coverage if c.get("ocf_covers_capex") is True
+    )
+    capex_samples = sum(
+        1 for c in cashflow_coverage if c.get("ocf_covers_capex") is not None
+    )
 
     # Leverage trend based on assets_to_eqt
     a2e_values = [
@@ -568,6 +590,8 @@ def _build_summary(
         "ocf_positive_years": ocf_pos,
         "fcf_positive_years": fcf_pos,
         "ocf_covers_investing_years": ocf_covers,
+        "ocf_covers_capex_years": ocf_covers_capex_years,
+        "ocf_covers_capex_samples": capex_samples,
         "leverage_trend": leverage_trend,
         "hidden_liability_status": hidden_result["status"],
         "missing_counts": {
@@ -661,6 +685,7 @@ def _render_markdown(
         f"- ocf_positive_years: {summary['ocf_positive_years']}",
         f"- fcf_positive_years: {summary['fcf_positive_years']}",
         f"- ocf_covers_investing_years: {summary['ocf_covers_investing_years']}",
+        f"- ocf_covers_capex_years: {summary.get('ocf_covers_capex_years', 0)}/{summary.get('ocf_covers_capex_samples', 0)}",
         f"- leverage_trend: {summary['leverage_trend']}",
         f"- hidden_liability_status: {summary['hidden_liability_status']}",
     ]
@@ -674,6 +699,7 @@ def _render_markdown(
     cf_header = [
         "end_date", "n_cashflow_act", "n_cashflow_inv_act",
         "n_cash_flows_fnc_act", "free_cashflow",
+        "c_pay_acq_const_fiolta", "ocf_minus_capex", "ocf_covers_capex",
         "ocf_plus_icf", "ocf_covers_investing",
     ]
     lines.append("| " + " | ".join(cf_header) + " |")

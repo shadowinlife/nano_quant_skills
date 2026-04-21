@@ -11,6 +11,8 @@ user-invocable: true
 
 目标是评估企业每一元收入需要多少营运资金、多少固定资产，以及人均投入产出效率，并与行业标杆对比。
 
+> ⚠️ **人均口径重要说明**：Tushare DuckDB **没有员工总数字段**。脚本默认只能计算“单位人力成本产出” `revenue / c_paid_to_for_empl`，它反映的是每花 1 元人力成本能带回多少收入，**不能**替代「人均营收 / 人均利润」这一框架规则。真实人均指标**必须由用户人工提供年报披露的员工总数**（见下文 `--employee-count-bundle`）；脚本禁止用 `c_paid_to_for_empl / 假设年薪` 之类代理估算，未提供时 `per_capita_status = human-in-loop-required`。
+
 ## 适用场景
 
 - 单独执行规则6
@@ -26,6 +28,16 @@ user-invocable: true
 - 分析日期，可选，默认今天
 - 回看年数，可选，默认最近 3 年
 - `--db-path`，可选，DuckDB 路径
+- `--employee-count-bundle`，可选，JSON 文件路径，人工提供年报员工总数以启用真实人均口径。格式：
+
+  ```json
+  [
+    {"ts_code": "600660.SH", "year": 2025, "employee_count": 33000},
+    {"ts_code": "600660.SH", "year": 2024, "employee_count": 32000}
+  ]
+  ```
+
+  或使用包装对象 `{"employee_counts": [...]}`。严禁填写代理估算值（例如 `c_paid_to_for_empl / 假设年薪`）。
 
 ## 当前口径
 
@@ -39,12 +51,22 @@ user-invocable: true
 2. **一元收入需要固定资产**
    - = `fix_assets / revenue`
 
-3. **人均投入产出**
-   - 数据库无员工人数字段，使用现金流量表 `c_paid_to_for_empl`（支付给职工及为职工支付的现金）作为人力成本代理
+3. **单位人力成本产出（数据库字段，不等于人均）**
    - 人力成本产出比 = `revenue / c_paid_to_for_empl`
    - 人力成本利润比 = `n_income_attr_p / c_paid_to_for_empl`
+   - 仅用于度量人力成本投入的性价比，**不可作为「人均」结论对外使用**。
 
-4. **辅助周转指标（来自 fin_indicator）**
+4. **真实人均投入产出（需 `--employee-count-bundle`）**
+   - `revenue_per_employee = revenue / employee_count`
+   - `profit_per_employee = n_income_attr_p / employee_count`
+   - `avg_labor_cost_per_employee = c_paid_to_for_empl / employee_count`
+   - `summary.per_capita_status` 取值：
+     - `ready`：回看窗口内每一年都已提供真实 employee_count
+     - `partial`：部分年份缺数
+     - `human-in-loop-required`：完全缺数；脚本 `status` 退化为 `partial`，并在 `human_in_loop_requests` 中给出具体缺口年份，要求用户提供年报「员工情况」章节的**在岗员工数合计**（不是期初/期末简单快照时取年报披露口径）。
+   - **禁止**：用任何公式/假设估算 employee_count。
+
+5. **辅助周转指标（来自 fin_indicator）**
    - `ar_turn`：应收账款周转率
    - `fa_turn`：固定资产周转率
    - `assets_turn`：总资产周转率
@@ -57,6 +79,7 @@ user-invocable: true
 2. 取同业中最近交易日 `total_mv`（总市值）最大的非自身公司作为标杆
 3. 标杆查询来源：`stk_factor_pro.total_mv`
 4. 对标杆公司计算完全相同的指标，进行逐项对比
+5. 如果 `--employee-count-bundle` 中同时提供了标杆股票相同年份的 employee_count，则标杆也会输出真实人均口径。
 
 ### 通用规则
 
@@ -73,7 +96,8 @@ user-invocable: true
 | 固定资产 | fin_balance | fix_assets |
 | 营业收入 | fin_income | revenue |
 | 归母净利润 | fin_income | n_income_attr_p |
-| 人力成本代理 | fin_cashflow | c_paid_to_for_empl |
+| 人力成本（现金口径） | fin_cashflow | c_paid_to_for_empl |
+| 员工总数（真实人均口径） | 用户提供 | employee_count（来自年报「员工情况」章节） |
 | 周转指标 | fin_indicator | ar_turn, fa_turn, assets_turn, ca_turn |
 | 行业同业 | idx_sw_l3_peers | anchor_ts_code, peer_ts_code, l3_name |
 | 总市值 | stk_factor_pro | total_mv |

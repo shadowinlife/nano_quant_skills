@@ -145,7 +145,8 @@ def _fetch_rows(
             COALESCE(i.f_ann_date, i.ann_date, i.end_date) AS visible_date,
             i.comp_type,
             i.revenue,
-            i.total_revenue
+            i.total_revenue,
+            i.n_income_attr_p
         FROM fin_income i
         CROSS JOIN params p
         WHERE i.ts_code = p.ts_code
@@ -190,7 +191,8 @@ def _fetch_rows(
             c.ts_code,
             c.end_date,
             COALESCE(c.f_ann_date, c.ann_date, c.end_date) AS visible_date,
-            c.n_cashflow_act
+            c.n_cashflow_act,
+            c.c_pay_acq_const_fiolta
         FROM fin_cashflow c
         CROSS JOIN params p
         WHERE c.ts_code = p.ts_code
@@ -206,6 +208,7 @@ def _fetch_rows(
             i.comp_type,
             i.revenue,
             i.total_revenue,
+            i.n_income_attr_p,
             ind.profit_dedt,
             ind.grossprofit_margin,
             ind.netprofit_margin,
@@ -217,6 +220,18 @@ def _fetch_rows(
                 ELSE NULL
             END AS selected_netprofit_margin_source,
             c.n_cashflow_act,
+            c.c_pay_acq_const_fiolta,
+            CASE
+                WHEN c.n_cashflow_act IS NOT NULL AND i.n_income_attr_p IS NOT NULL
+                     AND i.n_income_attr_p <> 0
+                THEN c.n_cashflow_act / i.n_income_attr_p
+                ELSE NULL
+            END AS net_profit_cash_ratio,
+            CASE
+                WHEN c.n_cashflow_act IS NOT NULL AND c.c_pay_acq_const_fiolta IS NOT NULL
+                THEN c.n_cashflow_act - c.c_pay_acq_const_fiolta
+                ELSE NULL
+            END AS fcf,
             ind.tr_yoy,
             ind.or_yoy,
             ind.dt_netprofit_yoy,
@@ -239,6 +254,7 @@ def _fetch_rows(
         comp_type,
         revenue,
         total_revenue,
+        n_income_attr_p,
         profit_dedt,
         grossprofit_margin,
         netprofit_margin,
@@ -246,6 +262,9 @@ def _fetch_rows(
         selected_netprofit_margin,
         selected_netprofit_margin_source,
         n_cashflow_act,
+        c_pay_acq_const_fiolta,
+        net_profit_cash_ratio,
+        fcf,
         tr_yoy,
         or_yoy,
         dt_netprofit_yoy,
@@ -297,19 +316,59 @@ def _build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     def _missing_count(field: str) -> int:
         return sum(1 for row in rows if _is_missing(row.get(field)))
 
+    # 净现比（OCF / 归母净利润）：理想值 ≥ 1。低于 1 表明账面利润未落地为现金。
+    cash_ratios: list[float] = []
+    cash_ratio_below_one_years = 0
+    for row in rows:
+        ni = _float_or_none(row.get("n_income_attr_p"))
+        ratio = _float_or_none(row.get("net_profit_cash_ratio"))
+        # 只在归母净利润 > 0 的年份衡量净现比质量；亏损年份净现比本身无经济含义。
+        if ratio is not None and ni is not None and ni > 0:
+            cash_ratios.append(ratio)
+            if ratio < 1.0:
+                cash_ratio_below_one_years += 1
+    net_profit_cash_ratio_avg = (
+        sum(cash_ratios) / len(cash_ratios) if cash_ratios else None
+    )
+
+    fcf_positive_years = _positive_count("fcf")
+
+    # 毛利率趋势：按 end_date DESC 排列。若严格单调下降（最老 > 中间 > 最新），
+    # 且至少 3 个样本均为非空正值，则标记 declining。
+    gm_declining = False
+    gm_values: list[float] = []
+    for row in rows:
+        gm = _float_or_none(row.get("grossprofit_margin"))
+        if gm is not None:
+            gm_values.append(gm)
+    if len(gm_values) >= 3:
+        # rows 为 end_date DESC；反转后为时间正序
+        chronological = list(reversed(gm_values))
+        if all(b < a for a, b in zip(chronological, chronological[1:])):
+            gm_declining = True
+
     latest_end_date = rows[0]["end_date"].isoformat() if rows else None
     return {
         "years_returned": len(rows),
         "latest_end_date": latest_end_date,
         "profit_dedt_positive_years": _positive_count("profit_dedt"),
         "operating_cashflow_positive_years": _positive_count("n_cashflow_act"),
+        "fcf_positive_years": fcf_positive_years,
+        "net_profit_cash_ratio_avg": net_profit_cash_ratio_avg,
+        "net_profit_cash_ratio_samples": len(cash_ratios),
+        "net_profit_cash_ratio_below_one_years": cash_ratio_below_one_years,
+        "grossprofit_margin_declining_3y": gm_declining,
         "missing_counts": {
             "revenue": _missing_count("revenue"),
             "total_revenue": _missing_count("total_revenue"),
+            "n_income_attr_p": _missing_count("n_income_attr_p"),
             "grossprofit_margin": _missing_count("grossprofit_margin"),
             "selected_netprofit_margin": _missing_count("selected_netprofit_margin"),
             "profit_dedt": _missing_count("profit_dedt"),
             "n_cashflow_act": _missing_count("n_cashflow_act"),
+            "c_pay_acq_const_fiolta": _missing_count("c_pay_acq_const_fiolta"),
+            "net_profit_cash_ratio": _missing_count("net_profit_cash_ratio"),
+            "fcf": _missing_count("fcf"),
         },
     }
 
@@ -358,6 +417,15 @@ def _render_markdown(
     lines.append(f"- latest_end_date: {summary['latest_end_date']}")
     lines.append(f"- profit_dedt_positive_years: {summary['profit_dedt_positive_years']}")
     lines.append(f"- operating_cashflow_positive_years: {summary['operating_cashflow_positive_years']}")
+    lines.append(f"- fcf_positive_years: {summary['fcf_positive_years']}")
+    npcr_avg = summary.get("net_profit_cash_ratio_avg")
+    lines.append(
+        f"- net_profit_cash_ratio_avg: {npcr_avg:.3f} (samples={summary['net_profit_cash_ratio_samples']})"
+        if npcr_avg is not None
+        else f"- net_profit_cash_ratio_avg: n/a (samples={summary['net_profit_cash_ratio_samples']})"
+    )
+    lines.append(f"- net_profit_cash_ratio_below_one_years: {summary['net_profit_cash_ratio_below_one_years']}")
+    lines.append(f"- grossprofit_margin_declining_3y: {summary['grossprofit_margin_declining_3y']}")
     missing_counts = summary["missing_counts"]
     missing_parts = ", ".join(f"{field}={count}" for field, count in missing_counts.items())
     lines.append(f"- missing_counts: {missing_parts}")
@@ -369,6 +437,7 @@ def _render_markdown(
         "comp_type",
         "revenue",
         "total_revenue",
+        "n_income_attr_p",
         "profit_dedt",
         "grossprofit_margin",
         "netprofit_margin",
@@ -376,6 +445,9 @@ def _render_markdown(
         "selected_netprofit_margin",
         "selected_netprofit_margin_source",
         "n_cashflow_act",
+        "c_pay_acq_const_fiolta",
+        "net_profit_cash_ratio",
+        "fcf",
         "tr_yoy",
         "or_yoy",
         "dt_netprofit_yoy",
@@ -393,7 +465,7 @@ def _render_markdown(
                 values.append(_format_number(value))
         lines.append("| " + " | ".join(values) + " |")
     if not rows:
-        lines.append("| no data |  |  |  |  |  |  |  |  |  |  |  |  |  |  |")
+        lines.append("| no data |" + "|".join("  " for _ in header[1:]) + "|")
     return "\n".join(lines)
 
 
