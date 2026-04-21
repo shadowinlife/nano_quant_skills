@@ -529,7 +529,10 @@ def _collect_human_requests(results: dict[str, dict[str, Any]]) -> list[dict[str
     # Look-05
     r05 = results.get("look-05", {})
     hidden_status = _summary_dict(r05).get("hidden_liability_status", "")
-    if hidden_status == "human-in-loop-required":
+    if r05.get("status") in ("human-in-loop-required", "partial") or hidden_status in (
+        "human-in-loop-required",
+        "partial",
+    ):
         human_reqs = r05.get("human_in_loop_requests", [])
         if isinstance(human_reqs, list) and human_reqs:
             for req in human_reqs:
@@ -847,6 +850,8 @@ def main() -> None:
                         help="look-05 年报附注文本包（JSON）")
     parser.add_argument("--output-dir", default=None,
                         help="中间文件输出目录（不设则使用临时目录）")
+    parser.add_argument("--final-output", default=None,
+                        help="最终综合报告输出路径（官方权威 artifact）")
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown",
                         help="输出格式")
     args = parser.parse_args()
@@ -914,10 +919,21 @@ def main() -> None:
         results, flags, quality, human_requests, recommendations, output_dir,
     )
 
+    final_output = _render_json(*render_args) if args.format == "json" else _render_markdown(*render_args)
+
+    final_output_path: Path | None = None
+    if args.final_output:
+        final_output_path = Path(args.final_output).expanduser().resolve()
+        final_output_path.parent.mkdir(parents=True, exist_ok=True)
+        final_output_path.write_text(final_output, encoding="utf-8")
+
     if args.format == "json":
-        print(_render_json(*render_args))
+        print(final_output)
     else:
-        print(_render_markdown(*render_args))
+        print(final_output)
+
+    if final_output_path is not None:
+        print(f"[七看] 最终报告已保存至: {final_output_path}", file=sys.stderr)
 
     print(f"\n[七看] 完成。中间文件已保存至: {output_dir}", file=sys.stderr)
 

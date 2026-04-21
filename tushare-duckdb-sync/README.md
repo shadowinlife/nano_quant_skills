@@ -16,6 +16,19 @@ pip install tushare duckdb pandas loguru
 export TUSHARE_TOKEN=你的token  # https://tushare.pro 注册后在个人主页获取
 ```
 
+脚本只读取 `TUSHARE_TOKEN` 环境变量，不会自动扫描 `.env`、`.env.local` 等文件。
+
+如果团队已经约定固定位置保存 Token，请在调用前显式加载，例如：
+
+```bash
+set -a
+source ./.env.tushare
+set +a
+python sync_table.py --endpoint stock_basic --duckdb-path ./ashare.duckdb --target-table stk_info --mode overwrite --dimension-type none
+```
+
+如果尚未约定固定位置，建议在每次同步前由人工提供一次性 Token，再只对当前命令导出环境变量。
+
 ### 交易日安全窗口
 
 - 对 `daily`、`moneyflow`、`stk_factor_pro`、`idx_factor_pro` 等盘后更新表，建议在 `Asia/Shanghai 18:00` 后同步当天数据。

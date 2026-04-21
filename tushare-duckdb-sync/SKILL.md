@@ -91,6 +91,20 @@ tushare-duckdb-sync/
 询问用户输入 Tushare Pro Token（注册 https://tushare.pro 后在个人主页获取）。
 验证 Token 有效性（调用 `trade_cal` 接口测试）。运行时通过 `TUSHARE_TOKEN` 环境变量传入。
 
+**Token 处理约定（必须 human-in-loop）**
+
+Agent 不得擅自扫描工作区、Shell 历史或系统目录去“猜测” Token 来源。进入任何同步动作前，必须满足以下二选一：
+
+1. **一次性提供 Token**：用户在当前会话中显式给出 Token，本次运行只在当前命令上下文导出 `TUSHARE_TOKEN`，任务结束后不写回仓库。
+2. **一次性约定固定位置**：用户明确授权一个持久化位置，例如 `./.env.tushare`、`./.env.local`、`~/.config/tushare/token.env`。后续同步可只从这个已约定位置读取，再显式导出 `TUSHARE_TOKEN` 后执行脚本。
+
+补充规则：
+
+- 如果当前 shell 已存在 `TUSHARE_TOKEN`，也应向用户确认“是否继续复用当前环境变量”。
+- 如果用户尚未提供 Token，且也没有约定固定位置，必须暂停同步并发起 human-in-loop 请求。
+- 如果用户选择固定位置，Agent 只允许读取该已授权路径，不得继续搜索其他 `.env*`、配置文件或钥匙串。
+- `sync_table.py` 本身只消费 `TUSHARE_TOKEN` 环境变量，不负责自动发现 `.env` 文件；从固定位置加载 Token 属于调用方工作流的一部分。
+
 ---
 
 ## 工作流程
@@ -218,6 +232,11 @@ TUSHARE_TOKEN=xxx python sync_table.py \
 任务文件格式参见 `templates/task_config.json`。
 
 > `sync_table.py` 是自包含脚本，不依赖本项目其它模块。Agent 只需填入参数即可执行。
+
+执行前置要求：
+
+- 先完成上面的 Token human-in-loop 流程。
+- 如果用户采用“固定位置”方案，先从已授权文件加载 Token，再以环境变量形式调用脚本；不要指望脚本自动读取该文件。
 
 社区脚本的默认安全行为：
 - `trade_date` 且未传 `end_date` 时，18:00 前自动只同步到上一个开放交易日。

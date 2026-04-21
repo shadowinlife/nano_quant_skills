@@ -373,6 +373,14 @@ def _compute_cashflow_coverage(rows: list[dict[str, Any]]) -> list[dict[str, Any
 # Hidden liability text extraction
 # ---------------------------------------------------------------------------
 
+def _normalize_report_year(value: Any) -> int:
+    if value is None or str(value).strip() == "":
+        raise ValueError("Each report entry must contain year")
+    try:
+        return int(str(value).strip())
+    except ValueError as exc:
+        raise ValueError(f"Each report entry must contain a valid year, got: {value!r}") from exc
+
 def _load_report_bundle(path: Path | None) -> list[dict[str, Any]]:
     if path is None:
         return []
@@ -384,13 +392,17 @@ def _load_report_bundle(path: Path | None) -> list[dict[str, Any]]:
     for item in reports:
         if not isinstance(item, dict):
             raise ValueError("Each report entry must be an object")
+        if "reports" in item:
+            raise ValueError(
+                "Nested 'reports' lists are not allowed inside report entries; each entry must be a flat report object"
+            )
         ts_code = str(item.get("ts_code") or "").strip().upper()
         if not ts_code:
             raise ValueError("Each report entry must contain ts_code")
         normalized.append({
             "ts_code": ts_code,
             "name": item.get("name"),
-            "year": item.get("year"),
+            "year": _normalize_report_year(item.get("year")),
             "url": item.get("url"),
             "text": str(item.get("text") or item.get("content") or ""),
         })

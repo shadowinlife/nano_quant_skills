@@ -63,6 +63,22 @@ STRUCTURED_MISSING_ITEMS = [
     "regional_sales_split",
     "single_customer_sales",
 ]
+OVERSEAS_SALES_CONTEXT_KEYWORDS = (
+    "销售",
+    "收入",
+    "营收",
+    "主营",
+    "业务",
+    "地区",
+    "分部",
+    "客户",
+    "占比",
+    "毛利",
+)
+OVERSEAS_SALES_REJECT_PATTERNS = (
+    re.compile(r"境内外会计准则"),
+    re.compile(r"境内外.*会计.*差异"),
+)
 
 
 def _default_db_path() -> Path:
@@ -79,6 +95,15 @@ def _connect(db_path: Path) -> duckdb.DuckDBPyConnection:
     if not db_path.exists():
         raise FileNotFoundError(f"DuckDB file not found: {db_path}")
     return duckdb.connect(str(db_path), read_only=True)
+
+
+def _normalize_report_year(value: Any) -> int:
+    if value is None or str(value).strip() == "":
+        raise ValueError("Each report entry must contain year")
+    try:
+        return int(str(value).strip())
+    except ValueError as exc:
+        raise ValueError(f"Each report entry must contain a valid year, got: {value!r}") from exc
 
 
 def _object_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
@@ -171,6 +196,10 @@ def _load_report_bundle(path: Path | None) -> list[dict[str, Any]]:
     for item in reports:
         if not isinstance(item, dict):
             raise ValueError("Each report entry must be an object")
+        if "reports" in item:
+            raise ValueError(
+                "Nested 'reports' lists are not allowed inside report entries; each entry must be a flat report object"
+            )
         ts_code = str(item.get("ts_code") or "").strip().upper()
         if not ts_code:
             raise ValueError("Each report entry must contain ts_code")
@@ -178,12 +207,30 @@ def _load_report_bundle(path: Path | None) -> list[dict[str, Any]]:
             {
                 "ts_code": ts_code,
                 "name": item.get("name"),
-                "year": item.get("year"),
+                "year": _normalize_report_year(item.get("year")),
                 "url": item.get("url"),
                 "text": str(item.get("text") or item.get("content") or ""),
             }
         )
     return normalized
+
+
+def _is_valid_overseas_sales_evidence(evidence: dict[str, Any]) -> bool:
+    snippet = str(evidence.get("snippet") or "")
+    matched_keywords = evidence.get("matched_keywords") or []
+    if any(pattern.search(snippet) for pattern in OVERSEAS_SALES_REJECT_PATTERNS):
+        return False
+    if "境内外" in matched_keywords and not any(
+        keyword in snippet for keyword in OVERSEAS_SALES_CONTEXT_KEYWORDS
+    ):
+        return False
+    return True
+
+
+def _filter_dimension_evidence(dimension: str, evidences: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if dimension != "overseas_sales":
+        return evidences
+    return [row for row in evidences if _is_valid_overseas_sales_evidence(row)]
 
 
 def _normalize_text(text: str) -> str:
@@ -244,7 +291,7 @@ def _analyze_report(report: dict[str, Any]) -> dict[str, Any]:
     missing = []
     for dimension, keywords in KEYWORDS.items():
         field = f"{dimension}_evidence"
-        payload[field] = _collect_windows(text, keywords)
+        payload[field] = _filter_dimension_evidence(dimension, _collect_windows(text, keywords))
         if not payload[field]:
             missing.append(dimension)
     payload["missing_dimensions"] = missing
