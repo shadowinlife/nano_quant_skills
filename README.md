@@ -14,6 +14,14 @@
 | [look-05-balance-sheet-health](look-05-balance-sheet-health/) | 五看：资产负债健康度 — 现金流覆盖、有息负债、偿债能力、隐性负债（需年报附注） | `look_05_balance_sheet_health.py` |
 | [look-06-input-output-efficiency](look-06-input-output-efficiency/) | 六看：投入产出效率 — 营运资金/收入、固定资产效率、人均投入产出（真实人均需用户提供员工总数） | `look_06_input_output_efficiency.py` |
 | [look-07-roe-capital-return](look-07-roe-capital-return/) | 七看：收益率与资本回报 — ROE 杜邦三要素拆解、驱动类型、趋势 | `look_07_roe_capital_return.py` |
+| [ask-q1-industry-prospect](ask-q1-industry-prospect/) | 八问 Q1：行业前景与市场规模（行业周期、政策、空间） | `q01_industry.py` |
+| [ask-q2-moat](ask-q2-moat/) | 八问 Q2：竞争优势与护城河（品牌、技术、成本） | `q02_moat.py` |
+| [ask-q3-management](ask-q3-management/) | 八问 Q3：管理团队与股权结构（高管、持股、稳定性） | `q03_management.py` |
+| [ask-q4-financial-integrity](ask-q4-financial-integrity/) | 八问 Q4：财务真实性与会计质量（审计、问询、净现比） | `q04_integrity.py` |
+| [ask-q5-market-position](ask-q5-market-position/) | 八问 Q5：市场地位与客户集中度（市占率、客户/供应商） | `q05_position.py` |
+| [ask-q6-business-model](ask-q6-business-model/) | 八问 Q6：业务模式与第二曲线（结构变化、可持续性） | `q06_business_model.py` |
+| [ask-q7-risk-factors](ask-q7-risk-factors/) | 八问 Q7：风险因素与应对机制（处罚、质押、停牌、政策） | `q07_risk.py` |
+| [ask-q8-future-plan](ask-q8-future-plan/) | 八问 Q8：未来规划与战略兑现率（预告、快报、IR 纪要） | `q08_future.py` |
 | [seven-look-eight-question](seven-look-eight-question/) | **七看一键编排** — 顺序执行 7 个维度、汇总红旗、评分、生成行动建议 | `run_seven_looks.py` |
 
 ## 目录结构
@@ -48,6 +56,30 @@ nano_quant_skills/
 ├── look-07-roe-capital-return/            ← 七看：收益率与资本回报
 │   ├── SKILL.md
 │   └── scripts/
+├── ask-q1-industry-prospect/              ← 八问 Q1：行业前景与市场规模
+│   ├── SKILL.md
+│   └── scripts/
+├── ask-q2-moat/                           ← 八问 Q2：竞争优势与护城河
+│   ├── SKILL.md
+│   └── scripts/
+├── ask-q3-management/                     ← 八问 Q3：管理团队与股权结构
+│   ├── SKILL.md
+│   └── scripts/
+├── ask-q4-financial-integrity/            ← 八问 Q4：财务真实性与会计质量
+│   ├── SKILL.md
+│   └── scripts/
+├── ask-q5-market-position/                ← 八问 Q5：市场地位与客户集中度
+│   ├── SKILL.md
+│   └── scripts/
+├── ask-q6-business-model/                 ← 八问 Q6：业务模式与第二曲线
+│   ├── SKILL.md
+│   └── scripts/
+├── ask-q7-risk-factors/                   ← 八问 Q7：风险因素与应对机制
+│   ├── SKILL.md
+│   └── scripts/
+├── ask-q8-future-plan/                    ← 八问 Q8：未来规划与战略兑现率
+│   ├── SKILL.md
+│   └── scripts/
 └── seven-look-eight-question/             ← 七看一键编排
     ├── SKILL.md
     ├── scripts/run_seven_looks.py
@@ -62,9 +94,11 @@ nano_quant_skills/
 3. **三项资产**：数据同步类 Skill 要求每次执行产出数据、元数据文档、运维记录三项资产。
 4. **可扩展**：新增 Skill 只需创建新目录并遵循相同结构。
 
-## 七看财务分析使用指南
+## 七看八问分析使用指南
 
-"七看"是一套面向 A 股基本面分析的量化框架，从 7 个维度（盈利质量、费用结构、增长趋势、业务分布、资产负债、投入产出、资本回报）对上市公司进行系统性财务体检。
+"七看八问"是一套面向 A 股基本面分析的组合框架：
+- 七看：从 7 个财务维度（盈利质量、费用结构、增长趋势、业务分布、资产负债、投入产出、资本回报）做结构化体检。
+- 八问：从行业、竞争、管理、财务真实性、市场地位、业务模式、风险、未来规划进行定性校验。
 
 ### 前置条件
 
@@ -124,6 +158,35 @@ python seven-look-eight-question/scripts/run_seven_looks.py \
 注：若未提供 `--employee-count-bundle-06`，look-06 会在 `human_in_loop_requests` 中给出缺数据年份清单，要求人工从年报「员工情况」章节抄录真实员工总数；禁止用任何代理公式估算。在 status 层这属于 `partial`，不扣质量分。
 
 **质量评分规则：** 基础 100 分，严重红旗 −15，一般预警 −5。等级：A(≥80) / B(60-79) / C(40-59) / D(<40)。
+
+### 八问单问执行
+
+每个 ask-qN 都可独立运行，便于单问调试与证据补录：
+
+```bash
+# 示例：Q1 行业前景
+python ask-q1-industry-prospect/scripts/q01_industry.py \
+    --ts-code 000002.SZ \
+    --db-path data/ashare.duckdb \
+    --as-of-date 2025-04-30
+
+# 示例：Q7 风险因素
+python ask-q7-risk-factors/scripts/q07_risk.py \
+    --ts-code 000002.SZ \
+    --db-path data/ashare.duckdb \
+    --as-of-date 2025-04-30
+```
+
+### 七看编排接入八问
+
+通过编排脚本可在七看结果中合并八问输出：
+
+```bash
+python seven-look-eight-question/scripts/run_seven_looks.py \
+    --stock 000002.SZ \
+    --include-eight-questions \
+    --format json
+```
 
 ### 作为 AI Agent Skill 使用
 

@@ -1,7 +1,7 @@
 {
   "framework": "高效财务分析框架",
   "methodology": "七看八问",
-  "version": "draft-0",
+  "version": "1.0",
   "rules": [
     {
       "rule_id": "look-01",
@@ -35,7 +35,7 @@
       "script": "look-01-profit-quality/scripts/look_01_profit_quality.py",
       "test_status": "passed",
       "review_status": "reviewed",
-      "notes": "时间窗口默认最近3年，支持人工覆盖。仅取report_type=1合并报表。年报规则为end_date=12-31。2026-04-21 B1 升级：补齐框架要求的净现比 net_profit_cash_ratio = n_cashflow_act / n_income_attr_p（只在 n_income_attr_p>0 的年份纳入平均）、自由现金流 fcf = n_cashflow_act - c_pay_acq_const_fiolta（强口径），以及毛利率连续≥3年下降监测 grossprofit_margin_declining_3y。扣分规则在 orchestrator: 净现比均值<0.5 critical、任何年<1 warning、FCF 全负 critical、毛利率连续下降 warning。调用时先检测公司类型，金融类公司提示不适用。"
+      "notes": "默认分析最近3年，仅取 report_type=1 合并报表，核心关注净现比、FCF 和毛利率连续下滑。"
     },
     {
       "rule_id": "look-02",
@@ -60,7 +60,7 @@
       "script": "look-02-cost-structure/scripts/look_02_cost_structure.py",
       "test_status": "passed",
       "review_status": "reviewed",
-      "notes": "分析管理费用率、研发费用率、销售费用率、财务费用率，以及费用增长与营收增长的匹配度。销售、管理、财务费用率使用 fin_indicator 现成字段；研发费用率使用 rd_exp/total_revenue 派生。重点警示销售费用增长但营收增长停滞。调用时先检测公司类型，金融类公司提示不适用。已拆分为独立 skill：look-02-cost-structure。"
+      "notes": "核心关注四费率与费用增速/营收增速匹配度，其中研发费用率由 rd_exp / total_revenue 派生。"
     },
     {
       "rule_id": "look-03",
@@ -86,7 +86,7 @@
       "script": "look-03-growth-trend/scripts/look_03_growth_trend.py",
       "test_status": "passed",
       "review_status": "reviewed",
-      "notes": "计算营业收入 CAGR 与归母净利润 CAGR，并通过商誉增长与取得子公司现金支出两个代理信号区分更偏内生增长还是可能包含并购驱动。CAGR 仅在起点和终点均为正数时计算，否则返回 null 与原因说明。调用时先检测公司类型，金融类公司提示不适用。已拆分为独立 skill：look-03-growth-trend。"
+      "notes": "核心关注收入 CAGR、归母净利润 CAGR 以及通过商誉和并购现金支出识别的增长模式。"
     },
     {
       "rule_id": "look-04",
@@ -117,7 +117,7 @@
       "script": "look-04-business-market-distribution/scripts/look_04_business_market_distribution.py",
       "test_status": "passed",
       "review_status": "reviewed",
-      "notes": "先用 stk_info 与 idx_sw_l3_peers 提供结构化画像和申万三级同行池，再在缺少年报附注结构化数据时切换为 human-in-loop 工作流：要求提供最近3年年报全文或全文地址，从文本中提取业务构成、海外销售和客户集中度证据，并对同行公司执行同类分析。金融类公司不适用。已拆分为独立 skill：look-04-business-market-distribution。基线验证：000001.SZ 返回 not-applicable；000002.SZ 在无 bundle 时返回 human-in-loop-required 且能命中申万 L3 同行池；1年 synthetic bundle 验证业务构成/海外销售/客户集中度 3 类证据抽取通过。"
+      "notes": "结构化画像依赖申万三级同行池；缺少年报全文时转为 human-in-loop，从文本补业务构成、海外销售和客户集中度证据。"
     },
     {
       "rule_id": "look-05",
@@ -150,7 +150,7 @@
       "script": "look-05-balance-sheet-health/scripts/look_05_balance_sheet_health.py",
       "test_status": "passed",
       "review_status": "reviewed",
-      "notes": "分析经营现金流覆盖、有息负债、偿债能力、资产负债率、隐性负债。2026-04-21 B2 升级：新增 OCF 覆盖资本开支检测 ocf_minus_capex = n_cashflow_act - c_pay_acq_const_fiolta，summary 输出 ocf_covers_capex_years / ocf_covers_capex_samples，扣分规则 orchestrator: 0 年覆盖 critical、<半数 warning。隐性负债仍需要年报附注全文（human-in-loop）。金融类公司不适用。"
+      "notes": "核心关注现金流覆盖、杠杆和偿债能力；隐性负债仍依赖年报附注全文补证。"
     },
     {
       "rule_id": "look-06",
@@ -186,7 +186,7 @@
       "script": "look-06-input-output-efficiency/scripts/look_06_input_output_efficiency.py",
       "test_status": "passed",
       "review_status": "reviewed",
-      "notes": "分析营运资金/收入、固定资产/收入、人均投入产出，含行业基准对标。2026-04-21 B3 升级：DuckDB 无员工总数字段，默认 revenue/c_paid_to_for_empl 只是单位人力成本产出，不能替代人均口径。脚本新增 --employee-count-bundle 参数（人工从年报员工情况章节抄录 JSON）；未提供时 summary.per_capita_status = human-in-loop-required，脚本整体 status=partial，并在 human_in_loop_requests 列出缺口年份。禁止用任何代理公式估算 employee_count。缺数据本身不扣分，仅通过 human-in-loop 推动补齐。金融类公司不适用。"
+      "notes": "核心关注营运资金/收入、固定资产/收入和人均效率；员工数缺失时通过 human-in-loop 补齐。"
     },
     {
       "rule_id": "look-07",
@@ -213,135 +213,197 @@
       "script": "look-07-roe-capital-return/scripts/look_07_roe_capital_return.py",
       "test_status": "passed",
       "review_status": "reviewed",
-      "notes": "杰邦分解 ROE=NPM×AT×EM，含行业基准对标、负权益保护。默认回看5年。金融类公司不适用。已拆分为独立 skill：look-07-roe-capital-return。"
+      "notes": "使用杜邦分解 ROE=NPM×AT×EM，默认回看5年，含行业对标与负权益保护。"
     },
     {
       "rule_id": "question-01",
       "sequence": 8,
       "category": "question",
-      "title": "待定义",
-      "status": "spec-needed",
-      "parallel_lane": "unassigned",
-      "data_status": "unknown",
-      "tables": [],
-      "derived_metrics": [],
+      "title": "Q1 行业前景",
+      "status": "implemented",
+      "parallel_lane": "question",
+      "data_status": "mixed-evidence",
+      "tables": [
+        "idx_sw_l3_peers"
+      ],
+      "derived_metrics": [
+        "sentiment_hits",
+        "industry_report_count",
+        "industry_policy_count"
+      ],
       "missing_data": [],
-      "script": null,
-      "test_status": "not-run",
-      "review_status": "not-reviewed",
-      "notes": ""
+      "script": "ask-q1-industry-prospect/scripts/q01_industry.py",
+      "test_status": "passed",
+      "review_status": "reviewed",
+      "notes": "依赖行业分类、行业研报和产业政策证据；单问脚本可独立运行。"
     },
     {
       "rule_id": "question-02",
       "sequence": 9,
       "category": "question",
-      "title": "待定义",
-      "status": "spec-needed",
-      "parallel_lane": "unassigned",
-      "data_status": "unknown",
-      "tables": [],
-      "derived_metrics": [],
+      "title": "Q2 竞争优势",
+      "status": "implemented",
+      "parallel_lane": "question",
+      "data_status": "mixed-evidence",
+      "tables": [
+        "fin_mainbz",
+        "idx_sw_l3_peers"
+      ],
+      "derived_metrics": [
+        "top3_concentration",
+        "moat_positive_hits",
+        "moat_negative_hits"
+      ],
       "missing_data": [],
-      "script": null,
-      "test_status": "not-run",
-      "review_status": "not-reviewed",
-      "notes": ""
+      "script": "ask-q2-moat/scripts/q02_moat.py",
+      "test_status": "passed",
+      "review_status": "reviewed",
+      "notes": "依赖主营结构、同行池和年报 MD&A 证据；单问脚本可独立运行。"
     },
     {
       "rule_id": "question-03",
       "sequence": 10,
       "category": "question",
-      "title": "待定义",
-      "status": "spec-needed",
-      "parallel_lane": "unassigned",
-      "data_status": "unknown",
-      "tables": [],
-      "derived_metrics": [],
+      "title": "Q3 管理团队",
+      "status": "implemented",
+      "parallel_lane": "question",
+      "data_status": "mixed-evidence",
+      "tables": [
+        "stk_company",
+        "stk_managers",
+        "stk_rewards",
+        "fin_top10_holders"
+      ],
+      "derived_metrics": [
+        "active_manager_count",
+        "top_holder_ratio",
+        "change_announcement_count"
+      ],
       "missing_data": [],
-      "script": null,
-      "test_status": "not-run",
-      "review_status": "not-reviewed",
-      "notes": ""
+      "script": "ask-q3-management/scripts/q03_management.py",
+      "test_status": "passed",
+      "review_status": "reviewed",
+      "notes": "依赖高管档案、股东集中度和管理层变动公告；单问脚本可独立运行。"
     },
     {
       "rule_id": "question-04",
       "sequence": 11,
       "category": "question",
-      "title": "待定义",
-      "status": "spec-needed",
-      "parallel_lane": "unassigned",
-      "data_status": "unknown",
-      "tables": [],
-      "derived_metrics": [],
+      "title": "Q4 财务真实性",
+      "status": "implemented",
+      "parallel_lane": "question",
+      "data_status": "mixed-evidence",
+      "tables": [
+        "fin_indicator",
+        "stk_name_history"
+      ],
+      "derived_metrics": [
+        "cash_ratio_red_flags",
+        "name_change_count",
+        "audit_signal_count"
+      ],
       "missing_data": [],
-      "script": null,
-      "test_status": "not-run",
-      "review_status": "not-reviewed",
-      "notes": ""
+      "script": "ask-q4-financial-integrity/scripts/q04_integrity.py",
+      "test_status": "passed",
+      "review_status": "reviewed",
+      "notes": "依赖净现比、名称历史和审计/问询/立案公告；单问脚本可独立运行。"
     },
     {
       "rule_id": "question-05",
       "sequence": 12,
       "category": "question",
-      "title": "待定义",
-      "status": "spec-needed",
-      "parallel_lane": "unassigned",
-      "data_status": "unknown",
-      "tables": [],
-      "derived_metrics": [],
+      "title": "Q5 市场地位",
+      "status": "implemented",
+      "parallel_lane": "question",
+      "data_status": "mixed-evidence",
+      "tables": [
+        "fin_mainbz",
+        "idx_sw_l3_peers"
+      ],
+      "derived_metrics": [
+        "top3_concentration",
+        "peer_group_size",
+        "leader_keyword_hits"
+      ],
       "missing_data": [],
-      "script": null,
-      "test_status": "not-run",
-      "review_status": "not-reviewed",
-      "notes": ""
+      "script": "ask-q5-market-position/scripts/q05_position.py",
+      "test_status": "passed",
+      "review_status": "reviewed",
+      "notes": "依赖主营结构、同行池和年报客户/市占率段落；单问脚本可独立运行。"
     },
     {
       "rule_id": "question-06",
       "sequence": 13,
       "category": "question",
-      "title": "待定义",
-      "status": "spec-needed",
-      "parallel_lane": "unassigned",
-      "data_status": "unknown",
-      "tables": [],
-      "derived_metrics": [],
+      "title": "Q6 业务模式",
+      "status": "implemented",
+      "parallel_lane": "question",
+      "data_status": "mixed-evidence",
+      "tables": [
+        "fin_mainbz"
+      ],
+      "derived_metrics": [
+        "top1_share",
+        "item_change_ratio",
+        "new_items_latest"
+      ],
+      "derived_metric_thresholds": {
+        "top1_share_warning": 0.8,
+        "item_change_ratio_warning": 0.5,
+        "new_items_latest_bonus": 1
+      },
       "missing_data": [],
-      "script": null,
-      "test_status": "not-run",
-      "review_status": "not-reviewed",
-      "notes": ""
+      "script": "ask-q6-business-model/scripts/q06_business_model.py",
+      "test_status": "passed",
+      "review_status": "reviewed",
+      "notes": "依赖多期主营结构和年报业务概览段落；单问脚本可独立运行。"
     },
     {
       "rule_id": "question-07",
       "sequence": 14,
       "category": "question",
-      "title": "待定义",
-      "status": "spec-needed",
-      "parallel_lane": "unassigned",
-      "data_status": "unknown",
-      "tables": [],
-      "derived_metrics": [],
+      "title": "Q7 风险因素",
+      "status": "implemented",
+      "parallel_lane": "question",
+      "data_status": "mixed-evidence",
+      "tables": [
+        "stk_pledge_stat",
+        "stk_st_daily"
+      ],
+      "derived_metrics": [
+        "pledge_ratio",
+        "st_event_count",
+        "penalty_count",
+        "red_flag_score"
+      ],
       "missing_data": [],
-      "script": null,
-      "test_status": "not-run",
-      "review_status": "not-reviewed",
-      "notes": ""
+      "script": "ask-q7-risk-factors/scripts/q07_risk.py",
+      "test_status": "passed",
+      "review_status": "reviewed",
+      "notes": "依赖处罚/诉讼公告、质押和 ST 风险信号；单问脚本可独立运行。"
     },
     {
       "rule_id": "question-08",
       "sequence": 15,
       "category": "question",
-      "title": "待定义",
-      "status": "spec-needed",
-      "parallel_lane": "unassigned",
-      "data_status": "unknown",
-      "tables": [],
-      "derived_metrics": [],
+      "title": "Q8 未来规划",
+      "status": "implemented",
+      "parallel_lane": "question",
+      "data_status": "mixed-evidence",
+      "tables": [
+        "fin_forecast",
+        "fin_express"
+      ],
+      "derived_metrics": [
+        "forecast_fulfillment_ratio",
+        "ir_meeting_count",
+        "strategy_signal_count"
+      ],
       "missing_data": [],
-      "script": null,
-      "test_status": "not-run",
-      "review_status": "not-reviewed",
-      "notes": ""
+      "script": "ask-q8-future-plan/scripts/q08_future.py",
+      "test_status": "passed",
+      "review_status": "reviewed",
+      "notes": "依赖业绩预告、快报、IR 调研和未来展望段落；单问脚本可独立运行。"
     }
   ]
 }

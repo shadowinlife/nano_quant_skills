@@ -1,4 +1,4 @@
-"""run_seven_looks.py — 七看总编排脚本
+"""seven_looks_orchestrator.py — 七看总编排脚本
 
 依次执行 look-01 ~ look-07 七个独立分析脚本，收集中间 JSON，
 汇总为一份综合财务质量报告，并附带量化评语与行动建议。
@@ -13,10 +13,10 @@ Phase 4（评语）: 附加质量评分 + 最多 3 条行动建议
 用法示例
 --------
 # 全自动（look-04/05 将提示需要年报文本）
-python run_seven_looks.py --stock 000002.SZ --as-of-date 2025-04-30
+python seven_looks_orchestrator.py --stock 000002.SZ --as-of-date 2025-04-30
 
 # 提供年报文本包后全量执行
-python run_seven_looks.py --stock 000002.SZ --as-of-date 2025-04-30 \
+python seven_looks_orchestrator.py --stock 000002.SZ --as-of-date 2025-04-30 \
     --report-bundle-04 /tmp/vanke_reports.json \
     --report-bundle-05 /tmp/vanke_notes.json
 """
@@ -28,9 +28,20 @@ import json
 import subprocess
 import sys
 import textwrap
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+
+
+_STDERR_LOCK = threading.Lock()
+
+
+def _log(msg: str) -> None:
+    """线程安全的 stderr 日志；并行执行时防止行交错。"""
+    with _STDERR_LOCK:
+        print(msg, file=sys.stderr, flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +50,14 @@ from typing import Any
 
 SKILLS_ROOT = Path(__file__).resolve().parents[2]  # .github/skills/
 PROJECT_ROOT = SKILLS_ROOT.parents[1]               # repo root
+EIGHT_QUESTIONS_SCRIPT = (
+    PROJECT_ROOT
+    / ".github"
+    / "skills"
+    / "seven-look-eight-question"
+    / "scripts"
+    / "eight_questions_orchestrator.py"
+)
 
 LOOK_SPECS: list[dict[str, Any]] = [
     {
@@ -155,6 +174,7 @@ def _run_look(
     lookback_years: int | None,
     db_path: str,
     extra_args: dict[str, str | None],
+    timeout_seconds: int,
 ) -> dict[str, Any]:
     """Run a single look script as a subprocess and return its JSON output."""
     script_path = SKILLS_ROOT / spec["skill_dir"] / "scripts" / spec["script"]
@@ -179,26 +199,27 @@ def _run_look(
     # Add extra arguments (report-bundle for look-04/05, employee-count-bundle for look-06)
     extra_key = spec.get("extra_args_key")
     if extra_key and extra_args.get(extra_key):
-        bundle_path = extra_args[extra_key]
-        if spec["rule_id"] == "look-04":
-            cmd.extend(["--report-bundle", bundle_path])
-        elif spec["rule_id"] == "look-05":
-            cmd.extend(["--report-bundle", bundle_path])
-        elif spec["rule_id"] == "look-06":
-            cmd.extend(["--employee-count-bundle", bundle_path])
+        bundle_path = extra_args.get(extra_key)
+        if isinstance(bundle_path, str):
+            if spec["rule_id"] == "look-04":
+                cmd.extend(["--report-bundle", bundle_path])
+            elif spec["rule_id"] == "look-05":
+                cmd.extend(["--report-bundle", bundle_path])
+            elif spec["rule_id"] == "look-06":
+                cmd.extend(["--employee-count-bundle", bundle_path])
 
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired:
         return {
             "rule_id": spec["rule_id"],
             "status": "error",
-            "error": "Execution timed out (120s)",
+            "error": f"Execution timed out ({timeout_seconds}s)",
         }
 
     if result.returncode != 0:
@@ -221,6 +242,214 @@ def _run_look(
     if "status" not in data:
         data["status"] = "ready"
     return data
+
+
+def _eight_questions_error(message: str) -> dict[str, Any]:
+    return {
+        "overall_status": "insufficient-evidence",
+        "summary": {},
+        "answers": [],
+        "question_summaries": [],
+        "cross_validation_flags": {},
+        "error": message,
+    }
+
+
+def _derive_eight_questions_status(payload: dict[str, Any]) -> str:
+    summary = payload.get("summary") if isinstance(payload, dict) else {}
+    if not isinstance(summary, dict):
+        return "unknown"
+
+    question_count = int(summary.get("question_count") or 0)
+    status_counts = summary.get("status_counts")
+    if not isinstance(status_counts, dict) or question_count <= 0:
+        return "unknown"
+
+    ready_count = int(status_counts.get("ready") or 0)
+    partial_count = int(status_counts.get("partial") or 0)
+    human_count = int(status_counts.get("human-in-loop-required") or 0)
+    insufficient_count = int(status_counts.get("insufficient-evidence") or 0)
+
+    if ready_count == question_count:
+        return "ready"
+    if human_count == question_count:
+        return "human-in-loop-required"
+    if insufficient_count == question_count:
+        return "insufficient-evidence"
+    if ready_count or partial_count or human_count or insufficient_count:
+        return "partial"
+    return "unknown"
+
+
+def _build_eight_question_summaries(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    answers = payload.get("answers")
+    if not isinstance(answers, list):
+        return []
+
+    return [
+        {
+            "question_id": answer.get("question_id"),
+            "question_title": answer.get("question_title"),
+            "status": answer.get("status", "unknown"),
+            "rating": answer.get("rating"),
+            "weighted_rating": answer.get("weighted_rating"),
+        }
+        for answer in answers
+        if isinstance(answer, dict)
+    ]
+
+
+def _build_eight_questions_cross_validation(
+    payload: dict[str, Any],
+    look01_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+
+    q4_rating = None
+    answers = payload.get("answers")
+    if isinstance(answers, list):
+        for answer in answers:
+            if isinstance(answer, dict) and answer.get("question_id") == 4:
+                q4_rating = answer.get("rating")
+                break
+
+    net_profit_cash_ratio_avg = _summary_dict(look01_payload).get("net_profit_cash_ratio_avg")
+    if (
+        q4_rating is not None
+        and net_profit_cash_ratio_avg is not None
+        and q4_rating <= 2
+        and net_profit_cash_ratio_avg < 0.5
+    ):
+        return {
+            "financial_integrity": "reinforced",
+            "net_profit_cash_ratio_avg": round(float(net_profit_cash_ratio_avg), 3),
+            "q4_rating": q4_rating,
+        }
+    return {}
+
+
+def _run_eight_questions(
+    stock: str,
+    as_of_date: str,
+    db_path: str,
+    base_output_dir: Path,
+    look01_payload: dict[str, Any] | None,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    """Run look-08 as a subprocess, then read the full payload from its output file."""
+    if not EIGHT_QUESTIONS_SCRIPT.exists():
+        return _eight_questions_error(f"Script not found: {EIGHT_QUESTIONS_SCRIPT}")
+
+    output_dir = base_output_dir / "look-08"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable,
+        str(EIGHT_QUESTIONS_SCRIPT),
+        "--ts-code",
+        stock,
+        "--duckdb-path",
+        db_path,
+        "--as-of-date",
+        as_of_date,
+        "--output-dir",
+        str(output_dir),
+        "--format",
+        "json",
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        return _eight_questions_error(f"Execution timed out ({timeout_seconds}s)")
+
+    if result.returncode != 0:
+        return _eight_questions_error(result.stderr.strip()[:500])
+
+    payload_path = output_dir / "eight_questions.json"
+    if not payload_path.exists():
+        return _eight_questions_error(f"Expected output file missing: {payload_path}")
+
+    try:
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return _eight_questions_error(f"Invalid JSON output: {exc}")
+
+    payload["overall_status"] = _derive_eight_questions_status(payload)
+    payload["question_summaries"] = _build_eight_question_summaries(payload)
+    payload["cross_validation_flags"] = _build_eight_questions_cross_validation(
+        payload,
+        look01_payload,
+    )
+    payload["output_file"] = str(payload_path)
+    return payload
+
+
+def _extend_with_eight_questions_human_requests(
+    requests: list[dict[str, str]],
+    eight_questions: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    merged = list(requests)
+    if not isinstance(eight_questions, dict):
+        return merged
+
+    summary = eight_questions.get("summary")
+    if not isinstance(summary, dict):
+        return merged
+
+    for req in summary.get("human_in_loop_requests", []):
+        if not isinstance(req, dict):
+            continue
+        prefix_parts = []
+        if req.get("question_id") is not None:
+            prefix_parts.append(f"Q{req['question_id']}")
+        if req.get("question_title"):
+            prefix_parts.append(str(req["question_title"]))
+        prefix = " ".join(prefix_parts)
+        request_text = str(req.get("request", "")).strip()
+        merged.append(
+            {
+                "rule_id": "look-08",
+                "request": f"{prefix}: {request_text}".strip(": "),
+            }
+        )
+    return merged
+
+
+def _collect_eight_questions_critical_gaps(
+    eight_questions: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    if not isinstance(eight_questions, dict):
+        return []
+
+    summary = eight_questions.get("summary")
+    if not isinstance(summary, dict):
+        return []
+
+    gaps: list[dict[str, str]] = []
+    for gap in summary.get("critical_gaps", []):
+        if not isinstance(gap, dict):
+            continue
+        prefix_parts = []
+        if gap.get("question_id") is not None:
+            prefix_parts.append(f"Q{gap['question_id']}")
+        if gap.get("question_title"):
+            prefix_parts.append(str(gap["question_title"]))
+        prefix = " ".join(prefix_parts)
+        gap_text = str(gap.get("gap", "")).strip()
+        gaps.append(
+            {
+                "rule_id": "look-08",
+                "gap": f"{prefix}: {gap_text}".strip(": "),
+            }
+        )
+    return gaps
 # ---------------------------------------------------------------------------
 
 # Red flag extractors: each returns a list of (flag_text, severity) tuples
@@ -618,6 +847,8 @@ def _render_json(
     human_requests: list[dict[str, str]],
     recommendations: list[dict[str, str]],
     intermediate_dir: Path | None,
+    eight_questions: dict[str, Any] | None = None,
+    critical_gaps: list[dict[str, str]] | None = None,
 ) -> str:
     commentary = _generate_commentary(stock, results, flags, quality)
     normalized_results = {
@@ -649,6 +880,10 @@ def _render_json(
             str(intermediate_dir) if intermediate_dir else None
         ),
     }
+    if eight_questions is not None:
+        payload["eight_questions"] = eight_questions
+    if critical_gaps:
+        payload["critical_gaps"] = critical_gaps
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
 
 
@@ -662,6 +897,8 @@ def _render_markdown(
     human_requests: list[dict[str, str]],
     recommendations: list[dict[str, str]],
     intermediate_dir: Path | None,
+    eight_questions: dict[str, Any] | None = None,
+    critical_gaps: list[dict[str, str]] | None = None,
 ) -> str:
     lines: list[str] = []
 
@@ -712,6 +949,43 @@ def _render_markdown(
         finding = _summarize_one_look(rid, data)
         lines.append(f"| {rid} | {spec['title']} | {status} | {finding} |")
     lines.append("")
+
+    if eight_questions is not None:
+        lines.append("## 八问摘要")
+        lines.append("")
+        lines.append(f"- 总体状态: `{eight_questions.get('overall_status', 'unknown')}`")
+        summary = eight_questions.get("summary", {})
+        if isinstance(summary, dict):
+            lines.append(
+                f"- 平均评级: `{summary.get('avg_rating')}` · 加权平均: `{summary.get('avg_weighted_rating')}`"
+            )
+        cross_validation_flags = eight_questions.get("cross_validation_flags", {})
+        if cross_validation_flags:
+            lines.append(f"- 交叉校验: `{cross_validation_flags}`")
+        error_message = eight_questions.get("error")
+        if error_message:
+            lines.append(f"- 执行异常: `{error_message}`")
+        lines.append("")
+
+        question_summaries = eight_questions.get("question_summaries", [])
+        if isinstance(question_summaries, list) and question_summaries:
+            lines.append("| 问题 | 状态 | 评级 | 加权评级 |")
+            lines.append("|------|------|------|---------|")
+            for item in question_summaries:
+                if not isinstance(item, dict):
+                    continue
+                lines.append(
+                    f"| Q{item.get('question_id')} {item.get('question_title', '')} | "
+                    f"{item.get('status', 'unknown')} | {item.get('rating')} | {item.get('weighted_rating')} |"
+                )
+            lines.append("")
+
+        if critical_gaps:
+            lines.append("### 八问关键证据缺口")
+            lines.append("")
+            for gap in critical_gaps:
+                lines.append(f"- {gap['gap']}")
+            lines.append("")
 
     # Human-in-loop
     if human_requests:
@@ -889,8 +1163,8 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             示例:
-              python run_seven_looks.py --stock 000002.SZ --as-of-date 2025-04-30
-              python run_seven_looks.py --stock 000002.SZ --as-of-date 2025-04-30 \\
+              python seven_looks_orchestrator.py --stock 000002.SZ --as-of-date 2025-04-30
+              python seven_looks_orchestrator.py --stock 000002.SZ --as-of-date 2025-04-30 \\
                   --report-bundle-04 reports.json --report-bundle-05 notes.json
         """),
     )
@@ -915,9 +1189,45 @@ def main() -> None:
                         help="中间文件输出目录（不设则使用临时目录）")
     parser.add_argument("--final-output", default=None,
                         help="最终综合报告输出路径（官方权威 artifact）")
+    parser.add_argument(
+        "--include-eight-questions",
+        action="store_true",
+        help="调用 look-08 业务问题脚本，并将结果合并到最终输出的 eight_questions 字段",
+    )
+    parser.add_argument(
+        "--eight-questions-bundle",
+        default=None,
+        help="已废弃；look-08 现通过 evidence harness 自动取证，请改用 --include-eight-questions",
+    )
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown",
                         help="输出格式")
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=4,
+        help=(
+            "并行执行 look-0N 子进程的线程池大小；设为 1 退化为串行。"
+            " DuckDB 只读模式支持多连接，默认 4 线程在 MBP 级硬件上约比串行快 2-3 倍。"
+        ),
+    )
+    parser.add_argument(
+        "--per-look-timeout",
+        type=int,
+        default=120,
+        help="每个 look 子进程超时时间（秒），默认 120。",
+    )
+    parser.add_argument(
+        "--eight-questions-timeout",
+        type=int,
+        default=180,
+        help="look-08 子进程超时时间（秒），默认 180。",
+    )
     args = parser.parse_args()
+
+    if args.eight_questions_bundle:
+        parser.error(
+            "--eight-questions-bundle 已废弃；look-08 现通过 evidence harness 自动取证，请改用 --include-eight-questions。"
+        )
 
     as_of_date = _parse_date(args.as_of_date).isoformat()
 
@@ -941,13 +1251,12 @@ def main() -> None:
     auto_rules = ["look-01", "look-02", "look-03", "look-06", "look-07"]
     human_rules = ["look-04", "look-05"]
 
-    print(f"[七看] 开始分析 {args.stock}，分析日期 {as_of_date}", file=sys.stderr)
+    _log(f"[七看] 开始分析 {args.stock}，分析日期 {as_of_date}（并发 {args.max_workers}）")
 
-    for spec in LOOK_SPECS:
+    def _execute(spec: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         rid = spec["rule_id"]
         phase = "Phase 1 (自动)" if rid in auto_rules else "Phase 2 (半自动)"
-        print(f"[七看] {phase} 执行 {rid}: {spec['title']} ...", file=sys.stderr)
-
+        _log(f"[七看] {phase} 启动 {rid}: {spec['title']} ...")
         data = _run_look(
             spec=spec,
             stock=args.stock,
@@ -955,24 +1264,59 @@ def main() -> None:
             lookback_years=args.lookback_years,
             db_path=args.db_path,
             extra_args=extra_args,
+            timeout_seconds=args.per_look_timeout,
         )
-        results[rid] = data
-
-        # Write intermediate file
+        # Write intermediate file（线程内独占该 rule_id 的文件名，无竞争）
         intermediate_path = output_dir / f"{rid}.json"
         intermediate_path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2, default=str),
             encoding="utf-8",
         )
-
         status = data.get("status", "unknown")
-        print(f"[七看]   → {rid} 完成, status={status}", file=sys.stderr)
+        _log(f"[七看]   → {rid} 完成, status={status}")
+        return rid, data
+
+    max_workers = max(1, int(args.max_workers))
+    if max_workers == 1:
+        # 串行通道（调试/排查用）
+        for spec in LOOK_SPECS:
+            rid, data = _execute(spec)
+            results[rid] = data
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(_execute, spec): spec["rule_id"] for spec in LOOK_SPECS}
+            for fut in as_completed(futures):
+                rid, data = fut.result()
+                results[rid] = data
+
+    eight_questions: dict[str, Any] | None = None
+    if args.include_eight_questions:
+        print("[七看] Phase 2.5: 执行 look-08 八问 ...", file=sys.stderr)
+        eight_questions = _run_eight_questions(
+            stock=args.stock,
+            as_of_date=as_of_date,
+            db_path=args.db_path,
+            base_output_dir=output_dir,
+            look01_payload=results.get("look-01"),
+            timeout_seconds=args.eight_questions_timeout,
+        )
+        print(
+            "[七看]   → look-08 完成, overall_status="
+            f"{eight_questions.get('overall_status', 'unknown')}",
+            file=sys.stderr,
+        )
 
     # Phase 3: Aggregate
     print("[七看] Phase 3: 汇总红旗与评分 ...", file=sys.stderr)
     flags = _collect_all_flags(results)
     quality = _compute_quality_score(flags)
     human_requests = _collect_human_requests(results)
+    if eight_questions is not None:
+        human_requests = _extend_with_eight_questions_human_requests(
+            human_requests,
+            eight_questions,
+        )
+    critical_gaps = _collect_eight_questions_critical_gaps(eight_questions)
 
     # Phase 4: Commentary + recommendations
     print("[七看] Phase 4: 生成评语与建议 ...", file=sys.stderr)
@@ -981,6 +1325,7 @@ def main() -> None:
     render_args = (
         args.stock, as_of_date, args.lookback_years,
         results, flags, quality, human_requests, recommendations, output_dir,
+        eight_questions, critical_gaps,
     )
 
     final_output = _render_json(*render_args) if args.format == "json" else _render_markdown(*render_args)

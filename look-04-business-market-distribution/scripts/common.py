@@ -3,8 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+import sys
 
 import duckdb
+
+
+_SHARED_SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "seven-look-eight-question" / "scripts"
+if str(_SHARED_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SHARED_SCRIPTS_DIR))
+
+from eight_questions_domain import project_root as _shared_project_root
 
 
 REPORT_TYPE = "1"
@@ -52,7 +60,7 @@ class CompanyProfile:
 
 
 def project_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return _shared_project_root()
 
 
 def default_db_path() -> Path:

@@ -19,6 +19,7 @@ except ImportError:
 REPORT_TYPE = "1"
 PRIMARY_MARGIN_COLUMN = "netprofit_margin"
 SECONDARY_MARGIN_COLUMN = "profit_to_gr"
+ALLOWED_MARGIN_COLUMNS = {PRIMARY_MARGIN_COLUMN, SECONDARY_MARGIN_COLUMN}
 
 
 @dataclass(frozen=True)
@@ -131,6 +132,10 @@ def _fetch_rows(
 ) -> list[dict[str, Any]]:
     primary_column = margin_selection.primary_column
     fallback_column = margin_selection.fallback_column
+    if primary_column not in ALLOWED_MARGIN_COLUMNS:
+        raise ValueError(f"Invalid primary margin column: {primary_column}")
+    if fallback_column not in ALLOWED_MARGIN_COLUMNS:
+        raise ValueError(f"Invalid fallback margin column: {fallback_column}")
     query = f"""
     WITH params AS (
         SELECT
