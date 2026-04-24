@@ -2,6 +2,14 @@
 
 将 [Tushare Pro](https://tushare.pro) 数据同步到本地 DuckDB，支持全量覆盖与增量追加。
 
+## 模块定位与依赖
+
+- 本模块是仓库的数据底座生产端。
+- 下游模块 [2min-company-analysis](../2min-company-analysis/README.md) 默认读取 DuckDB 结构化数据。
+- 与 [nano-search-mcp](../nano-search-mcp/README.md) 的关系是互补：
+  - 本模块提供结构化财务/行情/基本面数据。
+  - `nano-search-mcp` 提供公告、年报正文、政策、IR 等非结构化外部证据。
+
 ## 快速开始
 
 ### 环境要求
