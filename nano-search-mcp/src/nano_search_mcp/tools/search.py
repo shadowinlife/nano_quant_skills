@@ -1,5 +1,6 @@
 """搜索工具 - 基于阿里云百炼 WebSearch MCP。"""
 
+from datetime import datetime, timezone
 import logging
 from typing import Any, TypedDict
 
@@ -36,6 +37,34 @@ def _normalize_search_query(
         parts.append(f"region:{region}")
 
     return " ".join(p for p in parts if p)
+
+
+def _build_general_query(
+    query: str,
+    region: str,
+    timelimit: str | None,
+    site: str | None,
+    include_terms: list[str] | None,
+    exclude_terms: list[str] | None,
+) -> str:
+    """构造更通用的搜索查询，支持站点与关键词约束。"""
+    base = _normalize_search_query(query=query, region=region, timelimit=timelimit)
+    parts = [base]
+
+    if site:
+        parts.append(f"site:{site.strip()}")
+
+    for term in include_terms or []:
+        token = term.strip()
+        if token:
+            parts.append(f'"{token}"')
+
+    for term in exclude_terms or []:
+        token = term.strip()
+        if token:
+            parts.append(f"-{token}")
+
+    return " ".join(p for p in parts if p).strip()
 
 
 def _search_via_bailian(
@@ -76,8 +105,100 @@ class SearchItem(TypedDict):
     snippet: str
 
 
+class GeneralSearchResult(TypedDict):
+    query: str
+    source: str
+    results: list[SearchItem]
+    fetch_time: str
+    error: str
+
+
 def register_search_tools(mcp: FastMCP) -> None:
     """注册搜索相关的 MCP Tools"""
+
+    @mcp.tool()
+    def general_search(
+        query: str,
+        max_results: int = 10,
+        region: str = "zh-cn",
+        timelimit: str | None = None,
+        site: str | None = None,
+        include_terms: list[str] | None = None,
+        exclude_terms: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """面向外部 MCP Client / agent / skill 的默认网页检索入口。
+
+        适用于开放式找资料、新闻、百科、公司信息、站点搜索等通用场景。
+        当调用方不确定该使用哪个检索工具时，优先使用本工具；只有在需要
+        特定领域的结构化结果（例如 gov.cn 政策文件）时，再切换到专用工具。
+
+        Args:
+            query: 主查询词（必填）。
+            max_results: 最大返回结果数，取值范围 [1, 30]，默认 10。
+            region: 搜索区域代码，默认 ``"zh-cn"``。
+            timelimit: 时间范围提示，可选 ``"d"`` / ``"w"`` / ``"m"`` / ``"y"``。
+            site: 可选站点过滤，如 ``"gov.cn"`` 或 ``"sina.com.cn"``。
+            include_terms: 可选必须包含关键词列表。
+            exclude_terms: 可选排除关键词列表。
+
+        Returns:
+            dict:
+              成功：{
+                "query":      str,  # 最终执行的查询
+                "source":     "bailian_web_search",
+                "results":    list[{"title", "url", "snippet"}],
+                "fetch_time": str
+              }
+              失败：{"query", "source": "unavailable", "error", "fetch_time", "results": []}
+
+        Notes:
+            - 该工具不抛异常，适合作为上层 Agent 的通用兜底检索入口。
+            - 对于新接入的外部消费者，应优先选择本工具而不是 ``search``。
+        """
+        fetch_time = datetime.now(timezone.utc).isoformat()
+
+        raw_query = (query or "").strip()
+        if not raw_query:
+            return {
+                "query": "",
+                "source": "unavailable",
+                "error": "query 不能为空",
+                "results": [],
+                "fetch_time": fetch_time,
+            }
+
+        max_results = max(1, min(int(max_results), 30))
+        final_query = _build_general_query(
+            query=raw_query,
+            region=region,
+            timelimit=timelimit,
+            site=site,
+            include_terms=include_terms,
+            exclude_terms=exclude_terms,
+        )
+
+        try:
+            results = _search_via_bailian(
+                query=final_query,
+                max_results=max_results,
+                region="",
+                timelimit=None,
+            )
+        except RuntimeError as exc:
+            return {
+                "query": final_query,
+                "source": "unavailable",
+                "error": str(exc),
+                "results": [],
+                "fetch_time": fetch_time,
+            }
+
+        return {
+            "query": final_query,
+            "source": "bailian_web_search",
+            "results": results,
+            "fetch_time": fetch_time,
+        }
 
     @mcp.tool()
     def search(
@@ -86,7 +207,11 @@ def register_search_tools(mcp: FastMCP) -> None:
         region: str = "zh-cn",
         timelimit: str | None = None,
     ) -> list[SearchItem]:
-        """使用百炼 WebSearch MCP 搜索网页，返回标题、URL 和摘要。
+        """百炼 WebSearch 的低层原始包装；新接入优先使用 ``general_search``。
+
+        本工具保留旧版返回形状（直接返回 ``[{title, url, snippet}]``），适合
+        已依赖该返回结构的调用方。对新的外部 MCP Client / agent / skill，优先
+        使用 ``general_search`` 作为默认网页检索入口。
 
         Args:
             query: 搜索关键词（必填，非空字符串）

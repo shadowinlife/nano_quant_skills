@@ -188,10 +188,13 @@ def register_industry_policy_tools(mcp: FastMCP) -> None:
         industry_sw_l2: str = "",
         keywords: list[str] | None = None,
     ) -> dict:
-        r"""检索中国政府机构（\*.gov.cn）发布的行业政策文件。
+        r"""政策专用检索工具：检索中国政府机构（\*.gov.cn）发布的行业政策文件。
 
         根据申万二级行业名和业务关键词，通过百炼 WebSearch 检索
         政府网站发布的产业政策、行业规范等文件。
+        只有在你明确需要 ``gov.cn`` 政策证据时才应使用本工具；
+        如果需求是开放式找资料、新闻、百科、公司信息，或暂不确定是否为
+        政策文件，请优先改用 ``general_search``。
 
         Args:
             industry_sw_l2: 申万二级行业名，如 ``"汽车零部件"``、``"光伏设备"``
@@ -214,6 +217,7 @@ def register_industry_policy_tools(mcp: FastMCP) -> None:
 
         Notes:
             - 无结果时不触发第二数据源，交由调用方处理无数据场景
+            - 本工具是政策专用接口，不应用作通用网页搜索入口
         """
         fetch_time = datetime.now(tz=timezone.utc).isoformat()
         try:

@@ -56,6 +56,7 @@ def test_server_registers_all_tools():
     expected = {
         # 通用检索
         "search",
+        "general_search",
         "fetch_page",
         "search_deferred_topic",
         # 定期报告
@@ -81,3 +82,33 @@ def test_server_registers_all_tools():
         f"检测到未在契约中列出的 MCP 工具 {extra}；"
         "请同步更新 tests/test_server.py 与 server.py instructions。"
     )
+
+
+def test_server_instructions_include_search_routing_guidance():
+    instructions = server._MCP_INSTRUCTIONS
+
+    assert "优先使用 general_search" in instructions
+    assert "只有在需要明确的 gov.cn 政策证据时才使用 list_industry_policies" in instructions
+    assert "search 是低层兼容接口" in instructions
+
+
+def test_tool_descriptions_help_external_clients_choose_search_tools():
+    import anyio
+
+    tools = {tool.name: tool for tool in anyio.run(server.mcp.list_tools)}
+
+    general_desc = tools["general_search"].description or ""
+    search_desc = tools["search"].description or ""
+    policy_desc = tools["list_industry_policies"].description or ""
+
+    assert "默认网页检索入口" in general_desc
+    assert "优先使用本工具" in general_desc
+
+    assert "低层原始包装" in search_desc
+    assert "优先使用``general_search``".replace("`", "") not in search_desc
+    assert "优先使用" in search_desc
+    assert "general_search" in search_desc
+
+    assert "政策专用检索工具" in policy_desc
+    assert "gov.cn" in policy_desc
+    assert "general_search" in policy_desc
