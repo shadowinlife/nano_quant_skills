@@ -37,3 +37,16 @@ Thumbs.db
 # Tushare sync runtime artifacts
 mapping_registry.json
 !**/templates/mapping_registry.json
+
+# Local-edited properties / task config (may contain TUSHARE_TOKEN); keep .example
+*.properties
+!*.properties.example
+tushare_duckdb_sync_scripts/etl/tushare_to_duckdb.tasks.json
+
+# Scratch outputs at repo root
+/python_output.txt
+/shell_output.txt
+
+# IDE / agent workspace artifacts (do not push to public repo)
+.github/
+.qoder/
