@@ -50,3 +50,4 @@ tushare_duckdb_sync_scripts/etl/tushare_to_duckdb.tasks.json
 # IDE / agent workspace artifacts (do not push to public repo)
 .github/
 .qoder/
+.specify/
