@@ -48,6 +48,10 @@ tushare_duckdb_sync_scripts/etl/tushare_to_duckdb.tasks.json
 /shell_output.txt
 
 # IDE / agent workspace artifacts (do not push to public repo)
-.github/
+/.github/*
+!/.github/skills/
+/.github/skills/*
+!/.github/skills/daily-market-brief/
+!/.github/skills/daily-market-brief/**
 .qoder/
 .specify/

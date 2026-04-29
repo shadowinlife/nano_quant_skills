@@ -1,221 +1,228 @@
 # Tasks: A股开盘核心新闻聚合研究 Skill
 
-**Input**: Design documents from `/specs/001-daily-market-brief/`  
-**Prerequisites**: plan.md (required), spec.md (required for user stories)  
+**Input**: Design documents from `specs/001-daily-market-brief/`  
+**Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/  
+**Tests**: 合同测试、单次端到端集成测试和本地 opencode 验证属于 MVP 范围；20 日稳定性与运营监控验证不属于当前执行清单。  
 **Format**: `- [ ] [TaskID] [P?] [Story] Description with file path`
+
+---
+
+## MVP Scope
+
+本清单只覆盖首轮可交付范围：
+
+- 能在 `.github/skills/daily-market-brief/` 下跑通一次完整流程。
+- 生成结构化中间结果和独立 Markdown 报告。
+- 支持关键模块先出临时版、其余模块后补 final 版。
+- 报告满足当前量化门槛：高光不超过 5 条，板块不超过 10 个，每板块摘要不超过 60 个中文字符。
+- 完整流程按设计目标支持“数据拉取 + 处理 + 报告输出 + review 交接”在 90 分钟内完成。
+
+明确不放入当前执行面的内容：20 个交易日可用性模拟、运营指标沉淀、复杂跨模块冲突检测、增强版去重、Windows 专项扩展文档、生产运维 runbook。
 
 ---
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Project initialization and basic project structure
+**Purpose**: 创建最小可运行的 Skill 骨架和提交卫生边界
 
-- [ ] T001 Create SKILL directory structure per implementation plan at `.github/skills/daily-market-brief/`
-- [ ] T002 Initialize Python project with conda environment (legonanobot) and pip dependencies in `.github/skills/daily-market-brief/requirements.txt`
-- [ ] T003 [P] Setup linting (flake8/pylint) and formatting (black) configuration in `.github/skills/daily-market-brief/`
-- [ ] T004 Create `.gitignore` file at `.github/skills/daily-market-brief/` to exclude tmp/, .cache/, *.log, credentials
-- [ ] T005 [P] Create initial README.md at `.github/skills/daily-market-brief/README.md` with setup instructions
-- [ ] T006 [P] Create SKILL.md definition for Copilot integration at `.github/skills/daily-market-brief/SKILL.md`
+- [X] T001 Create skill directory skeleton at `.github/skills/daily-market-brief/` with `config/`, `docs/`, `src/`, `src/models/`, `src/modules/`, `src/sources/`, `src/utils/`, `tests/contract/`, `tests/integration/`, `tests/unit/`, and `tests/fixtures/mock_data/`
+- [X] T002 Initialize dependency baseline in `.github/skills/daily-market-brief/requirements.txt` for `PyYAML`, `requests`, `feedparser`, `pytest`, `tushare`, and `akshare`
+- [X] T003 [P] Create repository hygiene guardrails in `.github/skills/daily-market-brief/.gitignore` excluding `tmp/`, `.cache/`, logs, credentials, and machine-local artifacts
+- [X] T004 [P] Create `.github/skills/daily-market-brief/README.md` with setup, execution entry points, and artifact layout
+- [X] T005 [P] Create `.github/skills/daily-market-brief/SKILL.md` defining the agent-facing workflow, expected inputs, staged publication behavior, and manual review boundary
 
 ---
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
-**Purpose**: Core infrastructure that MUST complete before ANY user story implementation
+**Purpose**: 搭建所有 MVP 用户故事共用的配置、契约、CLI 与报告基础设施
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T007 Create configuration schema and YAML template at `.github/skills/daily-market-brief/config/config.example.yaml` defining tracking lists structure (social media, research institutions, commodities, time windows)
-- [ ] T007a Create initial tracking-lists.yaml with core lists in `.github/skills/daily-market-brief/config/tracking-lists.yaml` (5-10 core social accounts, 5-10 research institutions, 10-15 commodities) as user-maintainable configuration baseline
-- [ ] T008 Create platform compatibility utilities in `.github/skills/daily-market-brief/src/utils/platform_compat.py` for cross-platform path/subprocess handling (macOS/Linux/Windows)
-- [ ] T009 Create configuration loader utility in `.github/skills/daily-market-brief/src/utils/config_loader.py` to parse, validate YAML tracking lists, and check for empty/expired tracking lists
-- [ ] T010 Create logger utility in `.github/skills/daily-market-brief/src/utils/logger.py` for structured logging across all modules
-- [ ] T011 Create cache manager utility in `.github/skills/daily-market-brief/src/utils/cache_manager.py` for local JSON caching of intermediate results
-- [ ] T012 Create data model definitions in `.github/skills/daily-market-brief/src/models/` directory with DailyRunTask, ModuleResult, TrackingConfig, AggregatedReport classes
-- [ ] T013 Create report builder utility in `.github/skills/daily-market-brief/src/utils/report_builder.py` for markdown report generation and aggregation
-- [ ] T014 Setup pytest test infrastructure with fixtures in `.github/skills/daily-market-brief/tests/fixtures/mock_data/`
-- [ ] T015 Create cross-platform validation script at `.github/skills/daily-market-brief/validate-daily-run.sh` for local opencode validation before commit
-- [ ] T016 Create base CLI/entry point in `.github/skills/daily-market-brief/src/main.py` with argparse for date, config path, and module selection options
-- [ ] T016a Create minimal validation script proof-of-concept (`.github/skills/daily-market-brief/validate-daily-run.sh` partial implementation) validating cross-platform shell compatibility and Python env detection to verify design portability (Constitution Gate III checkpoint)
+- [X] T006 Create `.github/skills/daily-market-brief/config/config.example.yaml` with source-tier flags, critical module list, time windows, and tracked object structure
+- [X] T007 Create `.github/skills/daily-market-brief/config/tracking-lists.yaml` with MVP core lists for social accounts, research institutions, and commodities
+- [X] T008 Create cross-platform path and subprocess helpers in `.github/skills/daily-market-brief/src/utils/platform_compat.py`
+- [X] T009 Create YAML parsing and validation in `.github/skills/daily-market-brief/src/utils/config_loader.py` enforcing non-empty core lists, config snapshot versioning, and explicit empty-list errors
+- [X] T010 [P] Create structured logging in `.github/skills/daily-market-brief/src/utils/logger.py`
+- [X] T011 [P] Create JSON cache/artifact helpers in `.github/skills/daily-market-brief/src/utils/cache_manager.py`
+- [X] T012 Create runtime data models in `.github/skills/daily-market-brief/src/models/` for `DailyRunTask`, `TrackingConfig`, `TrackingItem`, `CoverageStatus`, `ModuleResult`, and `AggregatedReport`
+- [X] T013 Create report rendering utilities in `.github/skills/daily-market-brief/src/utils/report_builder.py` enforcing section status markers and readability limits from the plan
+- [X] T014 Create CLI entry point in `.github/skills/daily-market-brief/src/main.py` implementing the contract in `specs/001-daily-market-brief/contracts/daily-run-cli.md`
+- [X] T015 Setup pytest scaffolding and shared mock fixtures in `.github/skills/daily-market-brief/tests/fixtures/mock_data/`
+- [X] T016 Create `.github/skills/daily-market-brief/validate-daily-run.sh` plus cross-platform Python fallback `.github/skills/daily-market-brief/src/validate_daily_run.py` to validate env detection, config loading, CLI help, and writable artifact directories
 
-**Checkpoint**: Foundation ready - user story implementation can now begin in parallel
+**Checkpoint**: Foundation ready - MVP implementation can proceed without reopening project structure decisions
 
 ---
 
 ## Phase 3: User Story 1 - 生成开盘前精炼简报 (Priority: P1) 🎯 MVP
 
-**Goal**: Deliver complete daily news aggregation report covering all five analysis modules with staged publication and config-driven scope
+**Goal**: 交付一条可独立运行的日报链路，覆盖五个模块、分阶段发布、对象级覆盖状态和缺口标记
 
-**Independent Test**: Run complete workflow with mock data and verify all-5-modules-enabled report is generated with correct structure, section prioritization, and gap markers within 15 minutes readable time
+**Independent Test**: 使用 mock data 跑通一次完整流程，生成 temp/final JSON 与 Markdown 报告；报告必须满足“<=5 条高光、<=10 个板块、每板块 <=60 字摘要”，并且每个启用跟踪对象都落入 `covered`、`no_new`、`source_missing` 或 `list_error` 之一，其中 SC-003 达标分子只统计前三类业务状态
 
 ### Tests for User Story 1
 
-- [ ] T017 [P] [US1] Create contract test for module output schema in `.github/skills/daily-market-brief/tests/contract/test_module_output.py` validating JSON/markdown format
-- [ ] T018 [P] [US1] Create contract test for report aggregation format in `.github/skills/daily-market-brief/tests/contract/test_report_format.py`
-- [ ] T019 [US1] Create integration test for full daily workflow in `.github/skills/daily-market-brief/tests/integration/test_full_workflow.py` using mock data
+- [X] T017 [P] [US1] Create contract test for module result artifacts in `.github/skills/daily-market-brief/tests/contract/test_module_output.py` against `specs/001-daily-market-brief/contracts/module-result.schema.json`
+- [X] T018 [P] [US1] Create contract test for aggregated reports in `.github/skills/daily-market-brief/tests/contract/test_report_format.py` against `specs/001-daily-market-brief/contracts/aggregated-report.schema.json`
+- [X] T019 [US1] Create end-to-end integration test in `.github/skills/daily-market-brief/tests/integration/test_full_workflow.py` covering staged publication, partial success, and Markdown artifact generation
+- [X] T020 [US1] Create config-driven coverage integration test in `.github/skills/daily-market-brief/tests/integration/test_config_scope_and_status.py` verifying every enabled tracked object yields an explicit status
 
-### Implementation for User Story 1 - Core Modules (US/Media/Commodities)
+### Implementation for User Story 1
 
-- [ ] T020 [P] [US1] Implement US market module in `.github/skills/daily-market-brief/src/modules/us_market.py` (FULL AUTO) analyzing previous trading day US hotspots
-- [ ] T021 [P] [US1] Implement media mainline module in `.github/skills/daily-market-brief/src/modules/media_mainline.py` (FULL AUTO) extracting cross-highlighted topics from CN media (max 5)
-- [ ] T022 [P] [US1] Implement commodities module in `.github/skills/daily-market-brief/src/modules/commodities.py` (FULL AUTO) tracking commodity prices and regional news
-- [ ] T023 [P] [US1] Create data source implementations for core modules: `.github/skills/daily-market-brief/src/sources/us_market_feed.py`, `.media_feed.py`, `.commodity_feed.py` using production sources (tushare/akshare/feedparser per D2 decision); exploration sources documented in docs/source-evaluation.md
+- [X] T021 [P] [US1] Implement production source adapters for `us_market`, `media_mainline`, and `commodities` in `.github/skills/daily-market-brief/src/sources/us_market_feed.py`, `.github/skills/daily-market-brief/src/sources/media_feed.py`, and `.github/skills/daily-market-brief/src/sources/commodity_feed.py`
+- [X] T022 [P] [US1] Implement production source adapters for `social_consensus` and `research_reports` in `.github/skills/daily-market-brief/src/sources/social_feed.py` and `.github/skills/daily-market-brief/src/sources/research_feed.py`
+- [X] T023 [P] [US1] Implement `us_market` and `media_mainline` modules in `.github/skills/daily-market-brief/src/modules/us_market.py` and `.github/skills/daily-market-brief/src/modules/media_mainline.py`
+- [X] T024 [P] [US1] Implement `commodities`, `social_consensus`, and `research_reports` modules in `.github/skills/daily-market-brief/src/modules/commodities.py`, `.github/skills/daily-market-brief/src/modules/social_consensus.py`, and `.github/skills/daily-market-brief/src/modules/research_reports.py`
+- [X] T025 [US1] Implement orchestrator in `.github/skills/daily-market-brief/src/aggregator.py` with critical-module-first temp publication, graceful degradation, and final revision support
+- [X] T026 [US1] Implement object-level coverage accounting and section/module status propagation across `.github/skills/daily-market-brief/src/aggregator.py` and `.github/skills/daily-market-brief/src/utils/report_builder.py`
+- [X] T027 [US1] Wire CLI execution and artifact persistence in `.github/skills/daily-market-brief/src/main.py` so module JSON, aggregated JSON, and Markdown reports are emitted deterministically per run
+- [X] T028 [US1] Document source tiers and critical-module defaults in `.github/skills/daily-market-brief/docs/source-evaluation.md`, and create a structured source assessment matrix in `.github/skills/daily-market-brief/docs/source-assessment.yaml` aligned with the `SourceAssessment` model, including explicit `source_category` values
+- [X] T029 [US1] Add focused unit coverage for report readability limits and staged aggregation behavior in `.github/skills/daily-market-brief/tests/unit/test_aggregator.py`
 
-### Implementation for User Story 1 - Expanded Modules (Social/Research)
-
-- [ ] T024 [P] [US1] Implement social media consensus module in `.github/skills/daily-market-brief/src/modules/social_consensus.py` (FULL AUTO with quality gate: auto scrape + consensus detection + anomaly-triggered manual review) analyzing past 5 trading days common themes from config-tracked accounts
-- [ ] T025 [P] [US1] Implement research reports module in `.github/skills/daily-market-brief/src/modules/research_reports.py` (FULL AUTO with quality gate: auto discovery + relevance scoring + publication date verification + anomaly-triggered manual review) covering domestic and overseas institutions from config
-- [ ] T026 [P] [US1] Create data sources for social/research: `.github/skills/daily-market-brief/src/sources/social_feed.py`, `.research_feed.py` using production sources from Phase 2 config
-
-### Implementation for User Story 1 - Aggregation & Publication
-
-- [ ] T027 [US1] Implement aggregator orchestration in `.github/skills/daily-market-brief/src/aggregator.py` coordinating all 5 modules with staged publication strategy (temp report after critical modules complete, revision possible post-manual review) - implements D1 decision
-- [ ] T028 [US1] Document critical module definition list and staged report schema in plan/aggregator (e.g., US + Media are critical; Social/Research/Commodities are optional for temp version)
-- [ ] T029 [US1] Implement staged publication strategy in aggregator: generate temp report when critical modules complete, allow later revision with additional modules
-- [ ] T030 [US1] Add error handling and graceful degradation when individual sources unavailable in aggregator
-- [ ] T031 [US1] Add section-level status markers (confirmed/pending/missing) to report in report builder
-- [ ] T032 [US1] Implement conflict detection logic in aggregator: flag when same topic appears in multiple modules with conflicting perspectives and mark for manual review
-- [ ] T033 [US1] Implement cross-module deduplication algorithm: merge duplicate topics across modules while preserving evidence hierarchy
-- [ ] T034 [US1] Implement dynamic scope loading in aggregator: read tracking lists from config (Phase 2) and apply scope filters to each module
-
-### Tests for User Story 1 (Completion)
-
-- [ ] T035 [US1] Implement unit tests for aggregator in `.github/skills/daily-market-brief/tests/unit/test_aggregator.py`
-- [ ] T036 [US1] Implement unit tests for social consensus anomaly detection in `.github/skills/daily-market-brief/tests/unit/test_social_consensus.py` and research reports quality scoring in `.test_research_reports.py`
-- [ ] T037 [US1] Create integration test for dynamic scope adjustment using config in `.github/skills/daily-market-brief/tests/integration/test_config_change.py`
-
-**Checkpoint**: User Story 1 fully functional - can generate complete daily report with all 5 modules using config-driven scope or gracefully handle missing sources
+**Checkpoint**: User Story 1 is independently runnable and produces a publishable daily brief artifact set
 
 ---
 
 ## Phase 4: User Story 2 - 逐步沉淀自动化研究流程 (Priority: P2)
 
-**Goal**: Document and enhance automation/manual split; add operational monitoring and quality gates documentation
+**Goal**: 为五个模块补齐 step-by-step 任务说明、完成标准、自动/人工边界、审核目标、触发条件、退出条件与后续迭代路线
 
-**Independent Test**: Read generated documentation and verify: each module documents execution phase goal, input/output schema, automation boundary, quality gate thresholds, manual review triggers, and next-phase evolution direction
-
-### Tests for User Story 2
-
-- [ ] T038 [P] [US2] Create unit tests for documentation generation in `.github/skills/daily-market-brief/tests/unit/test_module_docs.py`
+**Independent Test**: 阅读模块规划文档，确认每个模块都能看到目标、输入、输出、依赖、完成标准、自动执行部分、人工介入部分、审核目标和退出条件
 
 ### Implementation for User Story 2
 
-- [ ] T039 [US2] Document module-level automation boundaries in `.github/skills/daily-market-brief/docs/module-automation.md` (FULL AUTO for all modules: US/media/commodities/social/research with quality gates; manual review only triggered by anomaly detection or data quality thresholds)
-- [ ] T040 [US2] Create YAML-based phase and task mapping in `.github/skills/daily-market-brief/config/execution-phases.yaml` documenting task decomposition and dependencies
-- [ ] T041 [US2] Document auto/manual split strategy and human review triggers in `.github/skills/daily-market-brief/docs/automation-roadmap.md` with future iteration targets
-- [ ] T042 [US2] Add comprehensive logging of automation decision points, quality gate thresholds, and any anomaly-triggered manual review flags in each module for audit trail and continuous improvement
-- [ ] T043 [US2] Add status field to each module result indicating: 'tracking list empty', 'no new items', 'X items found', 'list error' for audit trail
+- [X] T030 [US2] Create execution-phase mapping in `.github/skills/daily-market-brief/config/execution-phases.yaml` covering module goals, inputs, outputs, dependencies, completion criteria, review objectives, and exit conditions
+- [X] T031 [US2] Document module-level automation boundaries, manual review triggers, and operator handoff objectives in `.github/skills/daily-market-brief/docs/module-automation.md`
+- [X] T032 [US2] Document phased automation roadmap and future source-hardening path in `.github/skills/daily-market-brief/docs/automation-roadmap.md`
+- [X] T033 [US2] Align `.github/skills/daily-market-brief/SKILL.md` and `.github/skills/daily-market-brief/README.md` with the same auto/manual split, operator expectations, and handoff flow
 
-**Checkpoint**: User Stories 1 AND 2 complete - daily reports generated with clear automation/manual documentation and quality gates defined for continuous improvement
+**Checkpoint**: User Story 2 documents the operating model without reopening MVP runtime design
 
 ---
 
-## Phase 5: User Story 3 - 深化配置驱动的范围扩展与监控 (Priority: P3)
+## Phase 5: User Story 3 - 基于配置稳定扩展信息覆盖面 (Priority: P3)
 
-**Goal**: Enhance configuration management and operational monitoring for production scaling
+**Goal**: 让维护者可以调整配置清单而不改动主流程，并保持统一报告结构
 
-**Independent Test**: Modify tracking-lists.yaml to add/remove social media or research institutions, re-run workflow, verify report scope changes; run 20-day simulated uptime test; verify performance baseline
-
-### Tests for User Story 3
-
-- [ ] T044 [P] [US3] Create unit tests for config updates in `.github/skills/daily-market-brief/tests/unit/test_config_updates.py`
-- [ ] T045 [P] [US3] Create performance baseline measurement test in `.github/skills/daily-market-brief/tests/integration/test_performance_baseline.py` validating SC-001 (15 min read time)
-- [ ] T046 [P] [US3] Create simulated 20-day uptime test in `.github/skills/daily-market-brief/tests/integration/test_uptime_simulation.py` validating SC-002 (90% availability target)
+**Independent Test**: 修改 tracking lists 后重新运行流程，输出范围随配置变化，但报告结构、状态字段和产物路径保持稳定
 
 ### Implementation for User Story 3
 
-- [ ] T047 [US3] Create documentation for maintaining tracking lists in `.github/skills/daily-market-brief/docs/tracking-lists-guide.md` with examples
-- [ ] T048 [US3] Implement unit tests for scope adjustment in each module (social, research, commodities) verifying config changes propagate correctly
-- [ ] T049 [US3] Add operational metrics collection: track daily run time, source availability, module success rates, and anomaly detection triggers
-- [ ] T050 [US3] Document production operational runbook in `.github/skills/daily-market-brief/docs/operations-runbook.md` covering monitoring, alerting, failure recovery
+- [X] T034 [P] [US3] Create config update regression test in `.github/skills/daily-market-brief/tests/integration/test_config_update_roundtrip.py` for add/remove tracked items without report-shape regressions
+- [X] T035 [US3] Extend `.github/skills/daily-market-brief/src/utils/config_loader.py` to support enabled/disabled flags, core-vs-extended tiers, and stable config snapshot diffs for reruns
+- [X] T036 [US3] Extend `.github/skills/daily-market-brief/src/aggregator.py` and `.github/skills/daily-market-brief/src/utils/report_builder.py` so config changes alter scope without changing report contract structure
+- [X] T037 [US3] Create maintenance guide in `.github/skills/daily-market-brief/docs/tracking-lists-guide.md` with examples for social accounts, research institutions, and commodities
+- [X] T038 [US3] Add scope-maintenance examples to `.github/skills/daily-market-brief/config/config.example.yaml` and `.github/skills/daily-market-brief/README.md`
 
-**Checkpoint**: All user stories complete with operational monitoring - system ready for production deployment with clear scalability and reliability metrics
+**Checkpoint**: User Story 3 proves the tracked universe can evolve through config changes rather than code edits
 
 ---
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-**Purpose**: Cross-story improvements, validation, and finalization
+**Purpose**: 用最小但严格的验证闭环确认各故事可交付，并完成提交卫生检查
 
-- [ ] T051 [P] Create comprehensive documentation updates in `.github/skills/daily-market-brief/docs/architecture.md` documenting design rationale and core decisions (D1 staged publication, D2 source layering, D3 automation-first)
-- [ ] T052 [P] Create source evaluation documentation in `.github/skills/daily-market-brief/docs/source-evaluation.md` with production source recommendations (tushare, akshare, feedparser) and exploration source candidates (custom scrapers, RSSHub alternatives) documented but disabled by default (implements D2 decision)
-- [ ] T053 [P] Create quickstart guide in `.github/skills/daily-market-brief/docs/quickstart.md` with one-command setup and example usage demonstrating staged publication and production-source-only defaults
-- [ ] T054 [P] Create architecture documentation index in `.github/skills/daily-market-brief/docs/architecture-index.md` consolidating cross-references between module-automation.md, automation-roadmap.md, architecture.md, and quickstart.md
-- [ ] T055 Code cleanup and refactoring across all modules in `.github/skills/daily-market-brief/src/` for consistency
-- [ ] T056 [P] Create test coverage verification matrix in `.github/skills/daily-market-brief/tests/COVERAGE.md` linking each test task to FRs/SCs it validates
-- [ ] T057 [P] Run complete test suite: `pytest .github/skills/daily-market-brief/tests/ -v` in `.github/skills/daily-market-brief/`
-- [ ] T058 [P] Run cross-platform compatibility checks on macOS/Linux with platform_compat utilities
-- [ ] T059 Document Windows fallback strategies in `.github/skills/daily-market-brief/docs/windows-compatibility.md`
-- [ ] T060 Run local opencode validation with `./validate-daily-run.sh` and capture pass evidence
-- [ ] T061 Security audit: scan `.github/skills/daily-market-brief/` for hardcoded credentials, local paths, IDE artifacts
-- [ ] T062 Create `.github/skills/daily-market-brief/.gitignore` audit and verify no temporary/config files included
-- [ ] T063 Verify commit hygiene: no IDE metadata, no machine-specific absolute paths, no sensitive config in repository
-- [ ] T064 [P] Create final integration test running complete daily workflow end-to-end in `.github/skills/daily-market-brief/tests/integration/test_end_to_end.py`
-- [ ] T065 Update `.github/copilot-instructions.md` to reference new SKILL and execution documentation
-- [ ] T066 Create migration guide from Phase 0 research to Phase 1 design in `.github/skills/daily-market-brief/docs/migration-guide.md`
+- [X] T039 [P] Create implementation quickstart in `.github/skills/daily-market-brief/docs/quickstart.md` aligned with `specs/001-daily-market-brief/quickstart.md` and production-source defaults
+- [X] T040 Run `pytest .github/skills/daily-market-brief/tests/ -v` and fix failures until all implemented story tests pass
+- [X] T041 Run `conda run -n legonanobot python .github/skills/daily-market-brief/src/main.py --help` and confirm CLI contract availability
+- [X] T042 Run `conda run -n legonanobot python .github/skills/daily-market-brief/src/validate_daily_run.py` on all platforms, use `./.github/skills/daily-market-brief/validate-daily-run.sh` as a POSIX wrapper on macOS/Linux, and capture pass evidence in `specs/001-daily-market-brief/remediation-log.md`
+- [X] T043 Audit `.github/skills/daily-market-brief/` for credentials, local absolute paths, IDE metadata, and temporary artifacts before first commit
+- [X] T044 [P] Verify macOS/Linux/Windows behavior notes and the Python validation fallback are documented in `.github/skills/daily-market-brief/README.md` or `.github/skills/daily-market-brief/docs/quickstart.md`
+
+**Checkpoint**: Current implementation slice is validated and safe to review or commit
 
 ---
 
-## Dependencies & Execution Strategy
+## Dependencies & Execution Order
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: No dependencies - can start immediately  
-- **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories  
-- **User Story 1 (Phase 3)**: Depends on Foundational phase completion; covers all 5 modules + staged publication + config-driven scope - MVP deliverable
-- **User Story 2 (Phase 4)**: Can start after Phase 2; documents automation boundaries and quality gates  
-- **User Story 3 (Phase 5)**: Can start after Phase 2; adds operational monitoring and metrics
-- **Polish (Phase 6)**: Depends on all desired user stories being complete
+- **Setup (Phase 1)**: No dependencies - can start immediately
+- **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
+- **User Story 1 (Phase 3)**: Depends on Foundational completion - MVP delivery stop point
+- **User Story 2 (Phase 4)**: Can start after Foundational completion, but is more accurate once US1 interfaces stabilize
+- **User Story 3 (Phase 5)**: Can start after Foundational completion, but derives most value after US1 config-driven flow exists
+- **Polish (Phase 6)**: Depends on the stories you choose to complete in the current iteration
+
+### Within User Story 1
+
+- Contract and integration tests should be created before or alongside implementation and must fail before the corresponding feature is considered complete
+- Source adapters precede module implementations
+- Module implementations precede aggregator wiring
+- Aggregator and report builder behavior must be in place before CLI artifact validation
 
 ### User Story Dependencies
 
-- **US1 (P1)**: Can start after Phase 2 - MVP deliverable with all 5 modules (US/media/social/research/commodities)
-- **US2 (P2)**: Can start after Phase 2 - Extends US1 with automation documentation; independently testable
-- **US3 (P3)**: Can start after Phase 2 - Extends US1/US2 with operational monitoring; independently testable
+- **US1 (P1)**: Can start after Foundational - delivers the first runnable daily brief
+- **US2 (P2)**: Can start after Foundational - documents how the workflow should be operated and evolved
+- **US3 (P3)**: Can start after Foundational - strengthens config-driven scope evolution on top of the same report contract
 
 ### Parallel Opportunities
 
-- All Setup tasks marked [P] (T003-T006) can run in parallel
-- All Foundational tasks marked [P] (T007-T016) can run after prerequisite utilities
-- Once Phase 2 complete:
-  - US1 core module tests [P] (T017-T018) and implementations [P] (T020-T026) can run in parallel
-  - US1 social/research modules [P] (T024-T025) can start independently
-  - US2 tests [P] (T038) and Phase 4 work can start
-  - US3 tests [P] (T044-T046) and Phase 5 work can start
-- All story tests marked [P] can run in parallel within each phase
-- Phase 6 documentation tasks [P] (T051-T054, T057-T058, T064) can run in parallel
-
-### Time Budget Allocation
-
-- **Phase 1 (Setup)**: 1-2 days (with T016a PoC validation)
-- **Phase 2 (Foundational)**: 2-3 days (now includes T007a config baseline)
-- **Phase 3 (US1)**: 4-5 days (all 5 modules + staged publication + deduplication + conflict detection - expanded scope)
-- **Phase 4 (US2)**: 1-2 days (documentation only - module implementations now in Phase 3)
-- **Phase 5 (US3)**: 2-3 days (monitoring + metrics + performance/uptime testing)
-- **Phase 6 (Polish)**: 2-3 days (final validation, docs consolidation)
-
-**Total MVP (Phase 1-3): 7-10 days** (expanded from 6-9 due to full 5-module implementation in Phase 3)  
-**Full feature (Phase 1-6): 12-18 days** (increased from 10-16 due to operational monitoring in Phase 5)
-
-### Quality Gates
-
-- All tests marked [US1]/[US2]/[US3] must pass per story
-- Constitution checks (portability, setup, validation, reproducibility, hygiene) verified in Phase 6
-- Local opencode validation (T060) must pass with documented evidence
-- Pre-market time budget (30min aggregation, 15min readable, 1hr auto + 30min review) verified in Phase 3 integration tests
+- T003, T004, and T005 can run in parallel
+- T010 and T011 can run in parallel after T008/T009 start shaping shared utilities
+- T017 and T018 can run in parallel
+- T021 and T022 can run in parallel
+- T023 and T024 can run in parallel after the relevant source adapters exist
+- T030 and T031 can be developed in parallel once module/result shapes are stable
+- T034 can run in parallel with T037 and T038
+- T039 and T044 can run in parallel during final validation
 
 ---
 
-## MVP Scope Recommendation
+## Parallel Example: User Story 1
 
-**Minimum viable delivery**: Phases 1-3 (T001-T050 focusing on T020-T037)
+```bash
+# Contract tests can be created in parallel
+Task: "Create contract test for module result artifacts in .github/skills/daily-market-brief/tests/contract/test_module_output.py"
+Task: "Create contract test for aggregated reports in .github/skills/daily-market-brief/tests/contract/test_report_format.py"
 
-This delivers:
-- Complete daily report aggregation (US1 P1)
-- All 5 core modules (US/media/social/research/commodities)
-- Config-driven scope management (baseline lists in Phase 2)
-- Staged publication with conflict detection and deduplication
-- Graceful handling of missing sources
-- Local validation framework
+# Source adapters can be created in parallel
+Task: "Implement production source adapters for us_market, media_mainline, and commodities"
+Task: "Implement production source adapters for social_consensus and research_reports"
+```
 
-**Post-MVP additions**: Phases 4-5 (US2/US3 automation docs + operational monitoring) and Phase 6 (Polish) can follow in next iteration
+## Parallel Example: User Story 2
+
+```bash
+Task: "Create execution-phase mapping in .github/skills/daily-market-brief/config/execution-phases.yaml"
+Task: "Document module-level automation boundaries and manual review triggers in .github/skills/daily-market-brief/docs/module-automation.md"
+```
+
+## Parallel Example: User Story 3
+
+```bash
+Task: "Create config update regression test in .github/skills/daily-market-brief/tests/integration/test_config_update_roundtrip.py"
+Task: "Create maintenance guide in .github/skills/daily-market-brief/docs/tracking-lists-guide.md"
+```
+
+---
+
+## Implementation Strategy
+
+### MVP-First Sequence
+
+1. Complete Phase 1 to freeze the directory, dependency, and hygiene baseline.
+2. Complete Phase 2 so config, models, CLI, report builder, and validation script exist.
+3. Complete Phase 3 and stop once one full mock-driven daily workflow passes.
+4. Validate and demo at the Phase 3 checkpoint before expanding to US2 or US3.
+5. Add Phase 4 and Phase 5 incrementally, then finish with Phase 6 validation.
+
+### Why This Is Smaller Than The Previous Plan
+
+- It keeps all three user stories represented in the plan, so later work stays traceable to the spec.
+- It removes long-horizon reliability work from the first execution cycle.
+- It keeps all five modules in MVP because they are part of the promised brief, but drops nonessential heuristics such as advanced conflict detection and dedup optimization.
+- It treats staged publication as a sequencing feature, not an excuse to split the deliverable into multiple release tracks.
+
+---
+
+## Deferred After MVP
+
+以下内容保留为 post-MVP backlog，不属于当前执行清单：
+
+- 20 个交易日可用性模拟与 90% 可用性验证
+- 运营指标沉淀、告警、runbook 和生产值守文档
+- 高级聚合启发式：复杂冲突检测、增强版跨模块去重、更多人工复核触发器
+- 扩展文档资产：architecture index、coverage matrix、migration guide

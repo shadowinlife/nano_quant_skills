@@ -1,0 +1,139 @@
+execution_phases:
+  - phase_id: foundation
+    goal: 固定配置、契约、日志与验证入口，保证后续模块都在同一套运行框架下执行
+    completion_criteria:
+      - 配置和 tracking lists 可加载
+      - CLI help 可输出
+      - validate 脚本可返回 ok
+
+  - phase_id: temp_publication
+    goal: 关键模块先出 temp 报告，抢在盘前给出最小可用判断
+    completion_criteria:
+      - us_market 与 media_mainline 均为 confirmed
+      - temp 报告 JSON 和 Markdown 均已落盘
+      - 非关键模块缺口已显式标注
+
+  - phase_id: final_publication
+    goal: 五个模块收敛成 final 报告，并保留 temp 到 final 的修订关系
+    completion_criteria:
+      - 所有启用模块均有 module result 文件
+      - final 报告 JSON 和 Markdown 均已落盘
+      - coverage_summary 和 module_status 完整
+
+modules:
+  us_market:
+    goal: 提供海外市场风险偏好和隔夜主线
+    inputs:
+      - trade_date
+      - config.time_windows.us_market
+      - production rss feed or mock fixture
+    outputs:
+      - module-results/us_market.<stage>.json
+      - report section for us_market
+    dependencies: []
+    completion_criteria:
+      - 至少形成一个明确 summary
+      - source 缺失时返回 missing 而非静默失败
+    automation_scope:
+      - 自动抓取
+      - 自动生成 highlights 和 evidence
+    manual_review_scope:
+      - 检查是否存在重大主题漏报
+    review_objectives:
+      - 判断隔夜情绪是否足以影响 A 股开盘主线
+    exit_conditions:
+      - confirmed 后允许进入 temp gate
+      - missing 时必须记录缺口原因
+
+  media_mainline:
+    goal: 提炼主流财经媒体共同主线
+    inputs:
+      - trade_date
+      - config.time_windows.media_mainline
+      - production rss feed or mock fixture
+    outputs:
+      - module-results/media_mainline.<stage>.json
+      - report section for media_mainline
+    dependencies: []
+    completion_criteria:
+      - 报告摘要不超过 60 个字符
+      - 关键媒体无结果时返回 missing
+    automation_scope:
+      - 自动抓取
+      - 自动摘要
+    manual_review_scope:
+      - 核对是否把次要噪音误提成主线
+    review_objectives:
+      - 确认 temp 报告里的新闻主线是否足够清晰
+    exit_conditions:
+      - confirmed 后允许进入 temp gate
+      - missing 时保留 temp/final 缺口标记
+
+  social_consensus:
+    goal: 对核心社媒账号输出 covered/no_new/source_missing 状态
+    inputs:
+      - tracking_lists.social_accounts
+      - config.time_windows.social_consensus
+      - public tracking feeds or mock fixture
+    outputs:
+      - module-results/social_consensus.final.json
+      - coverage entries for each enabled social account
+    dependencies:
+      - foundation
+    completion_criteria:
+      - 每个 enabled item 都有显式状态
+    automation_scope:
+      - 自动拉取
+      - 自动 coverage 归类
+    manual_review_scope:
+      - 处理争议主题和异常噪音
+    review_objectives:
+      - 判断是否需要把社媒主题提升为最终高光
+    exit_conditions:
+      - confirmed/no_new/source_missing 均可进入 final
+
+  research_reports:
+    goal: 对核心机构输出 covered/no_new/source_missing 状态，并补充研究观点主线
+    inputs:
+      - tracking_lists.research_institutions
+      - config.time_windows.research_reports
+      - public tracking feeds or mock fixture
+    outputs:
+      - module-results/research_reports.final.json
+      - coverage entries for each enabled institution
+    dependencies:
+      - foundation
+    completion_criteria:
+      - 每个 enabled institution 都返回显式状态
+    automation_scope:
+      - 自动拉取
+      - 自动聚合 summary
+    manual_review_scope:
+      - 核查高影响机构观点是否需要人工确认
+    review_objectives:
+      - 决定研报观点是否进入 final 重点段落
+    exit_conditions:
+      - confirmed/no_new/source_missing 均可进入 final
+
+  commodities:
+    goal: 对核心商品输出显式 coverage，并补充风险背景
+    inputs:
+      - tracking_lists.commodities
+      - config.time_windows.commodities
+      - symbol feed or mock fixture
+    outputs:
+      - module-results/commodities.final.json
+      - coverage entries for each enabled commodity
+    dependencies:
+      - foundation
+    completion_criteria:
+      - 每个 enabled commodity 都有显式状态
+    automation_scope:
+      - 自动读取 mock 或 live adapter 结果
+      - 自动生成商品板块摘要
+    manual_review_scope:
+      - 判断是否需要补充地区供给事件
+    review_objectives:
+      - 判断商品波动是否足够影响 A 股相关板块
+    exit_conditions:
+      - confirmed/no_new/source_missing 均可进入 final

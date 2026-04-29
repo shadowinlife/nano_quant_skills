@@ -1,0 +1,1 @@
+"""Daily market brief skill source package."""

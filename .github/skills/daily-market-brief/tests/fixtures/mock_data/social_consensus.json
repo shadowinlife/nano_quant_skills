@@ -1,0 +1,24 @@
+{
+  "records": [
+    {
+      "item_id": "xueqiu-hot",
+      "topic_id": "social-001",
+      "headline": "雪球热帖集中讨论高股息与顺周期",
+      "summary": "高股息与顺周期切换成为社媒高频共识。",
+      "published_at": "2026-04-29T07:20:00+08:00",
+      "url": "https://example.com/social-001",
+      "source_name": "雪球热帖",
+      "confidence": "medium"
+    },
+    {
+      "item_id": "weibo-finance",
+      "topic_id": "social-002",
+      "headline": "微博财经热搜讨论人民币汇率波动",
+      "summary": "汇率波动对出口链影响成为短线焦点。",
+      "published_at": "2026-04-29T07:30:00+08:00",
+      "url": "https://example.com/social-002",
+      "source_name": "微博财经热搜",
+      "confidence": "medium"
+    }
+  ]
+}

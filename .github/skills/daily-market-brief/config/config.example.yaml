@@ -1,0 +1,78 @@
+version: mvp-2026-04-29
+updated_at: 2026-04-29T08:00:00+08:00
+enable_exploration_sources: false
+tracking_lists_path: tracking-lists.yaml
+critical_modules:
+  - us_market
+  - media_mainline
+artifact_defaults:
+  output_root: ../tmp
+  cache_root: ../tmp
+modules:
+  us_market:
+    enabled: true
+    source_tier: production
+  media_mainline:
+    enabled: true
+    source_tier: production
+  social_consensus:
+    enabled: true
+    source_tier: production
+  research_reports:
+    enabled: true
+    source_tier: production
+  commodities:
+    enabled: true
+    source_tier: production
+time_windows:
+  us_market:
+    label: 前一交易日至开盘前
+    start_offset_days: 1
+    end_offset_days: 0
+  media_mainline:
+    label: 昨晚主流财经媒体窗口
+    start_offset_days: 1
+    end_offset_days: 0
+  social_consensus:
+    label: 近五个交易日舆情窗口
+    start_offset_days: 5
+    end_offset_days: 0
+  research_reports:
+    label: 近五个交易日研报窗口
+    start_offset_days: 5
+    end_offset_days: 0
+  commodities:
+    label: 近三个交易日商品窗口
+    start_offset_days: 3
+    end_offset_days: 0
+tracked_object_structure:
+  social_accounts:
+    required_fields:
+      - item_id
+      - display_name
+      - enabled
+      - priority
+      - source_locator
+  research_institutions:
+    required_fields:
+      - item_id
+      - display_name
+      - enabled
+      - priority
+      - source_locator
+  commodities:
+    required_fields:
+      - item_id
+      - display_name
+      - enabled
+      - priority
+      - source_locator
+scope_examples:
+  disable_extended_items: true
+  review_modules:
+    - social_consensus
+    - research_reports
+  disable_item_ids:
+    - cls-opinion
+  enable_extended_item_ids:
+    - goldman-sachs

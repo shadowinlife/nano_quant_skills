@@ -1,0 +1,13 @@
+{
+  "records": [
+    {
+      "topic_id": "media-001",
+      "headline": "主流媒体聚焦科技制造与出海订单",
+      "summary": "科技制造与出海链成为财经媒体的共同主线。",
+      "published_at": "2026-04-29T01:10:00+08:00",
+      "url": "https://example.com/media-001",
+      "source_name": "Mainline Feed",
+      "confidence": "high"
+    }
+  ]
+}

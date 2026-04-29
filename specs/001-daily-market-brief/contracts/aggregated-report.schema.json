@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nano-quant-skills/specs/001-daily-market-brief/contracts/aggregated-report.schema.json",
+  "title": "DailyMarketBriefAggregatedReport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "report_id",
+    "run_id",
+    "stage",
+    "overall_status",
+    "generated_at",
+    "top_highlights",
+    "sections",
+    "module_status",
+    "coverage_summary",
+    "report_path"
+  ],
+  "properties": {
+    "report_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "temp",
+        "final"
+      ]
+    },
+    "overall_status": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "partial",
+        "review_required",
+        "failed"
+      ]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "top_highlights": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/definitions/highlight"
+      }
+    },
+    "sections": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "$ref": "#/definitions/section"
+      }
+    },
+    "module_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "us_market",
+        "media_mainline",
+        "social_consensus",
+        "research_reports",
+        "commodities"
+      ],
+      "properties": {
+        "us_market": {
+          "$ref": "#/definitions/moduleStatus"
+        },
+        "media_mainline": {
+          "$ref": "#/definitions/moduleStatus"
+        },
+        "social_consensus": {
+          "$ref": "#/definitions/moduleStatus"
+        },
+        "research_reports": {
+          "$ref": "#/definitions/moduleStatus"
+        },
+        "commodities": {
+          "$ref": "#/definitions/moduleStatus"
+        }
+      }
+    },
+    "coverage_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "covered",
+        "no_new",
+        "source_missing",
+        "list_error"
+      ],
+      "properties": {
+        "covered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "no_new": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_missing": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "list_error": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "disabled": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "report_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision_of": {
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "moduleStatus": {
+      "type": "string",
+      "enum": [
+        "confirmed",
+        "pending",
+        "missing",
+        "skipped",
+        "error",
+        "review_required",
+        "disabled"
+      ]
+    },
+    "highlight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topic_id",
+        "title",
+        "summary",
+        "priority_rank",
+        "confidence",
+        "module_origins"
+      ],
+      "properties": {
+        "topic_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "priority_rank": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "module_origins": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "us_market",
+              "media_mainline",
+              "social_consensus",
+              "research_reports",
+              "commodities"
+            ]
+          }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "status",
+        "summary",
+        "module_refs"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "confirmed",
+            "pending",
+            "missing",
+            "skipped",
+            "review_required"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "module_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "us_market",
+              "media_mainline",
+              "social_consensus",
+              "research_reports",
+              "commodities"
+            ]
+          }
+        },
+        "item_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

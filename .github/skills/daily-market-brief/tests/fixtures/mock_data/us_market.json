@@ -1,0 +1,22 @@
+{
+  "records": [
+    {
+      "topic_id": "us-market-001",
+      "headline": "纳指走强带动风险偏好回升",
+      "summary": "科技龙头反弹，盘前风险偏好改善。",
+      "published_at": "2026-04-28T20:10:00+00:00",
+      "url": "https://example.com/us-market-001",
+      "source_name": "Global Market Feed",
+      "confidence": "high"
+    },
+    {
+      "topic_id": "us-market-002",
+      "headline": "美债收益率回落缓解估值压力",
+      "summary": "长端利率回落，为成长板块提供估值缓冲。",
+      "published_at": "2026-04-28T22:20:00+00:00",
+      "url": "https://example.com/us-market-002",
+      "source_name": "Global Market Feed",
+      "confidence": "medium"
+    }
+  ]
+}

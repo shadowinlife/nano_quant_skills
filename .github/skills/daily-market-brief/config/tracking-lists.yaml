@@ -1,0 +1,82 @@
+version: tracking-2026-04-29
+updated_at: 2026-04-29T08:00:00+08:00
+social_accounts:
+  - item_id: xueqiu-hot
+    item_type: social_account
+    display_name: 雪球热帖
+    enabled: true
+    priority: core
+    source_locator: https://example.com/feeds/xueqiu-hot.xml
+    tags:
+      - 券商观点
+      - 热门讨论
+  - item_id: weibo-finance
+    item_type: social_account
+    display_name: 微博财经热搜
+    enabled: true
+    priority: core
+    source_locator: https://example.com/feeds/weibo-finance.xml
+    tags:
+      - 情绪
+      - 主线
+  - item_id: cls-opinion
+    item_type: social_account
+    display_name: 财联社观点流
+    enabled: false
+    priority: extended
+    source_locator: https://example.com/feeds/cls-opinion.xml
+research_institutions:
+  - item_id: citic
+    item_type: research_institution
+    display_name: 中信证券研究
+    enabled: true
+    priority: core
+    source_locator: https://example.com/research/citic.rss
+    region: CN
+  - item_id: guotai-junan
+    item_type: research_institution
+    display_name: 国泰君安研究
+    enabled: true
+    priority: core
+    source_locator: https://example.com/research/gtja.rss
+    region: CN
+  - item_id: goldman-sachs
+    item_type: research_institution
+    display_name: Goldman Sachs Research
+    enabled: false
+    priority: extended
+    source_locator: https://example.com/research/goldman.rss
+    region: US
+commodities:
+  - item_id: brent
+    item_type: commodity
+    display_name: 布伦特原油
+    enabled: true
+    priority: core
+    source_locator: BRENT
+    tags:
+      - 能源
+  - item_id: copper
+    item_type: commodity
+    display_name: 伦铜
+    enabled: true
+    priority: core
+    source_locator: COPPER
+    tags:
+      - 有色
+  - item_id: gold
+    item_type: commodity
+    display_name: COMEX 黄金
+    enabled: true
+    priority: core
+    source_locator: GOLD
+    tags:
+      - 贵金属
+  - item_id: coking-coal
+    item_type: commodity
+    display_name: 焦煤
+    enabled: false
+    priority: extended
+    source_locator: COKING_COAL
+    tags:
+      - 黑色系

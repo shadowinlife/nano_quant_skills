@@ -1,0 +1,24 @@
+{
+  "records": [
+    {
+      "item_id": "brent",
+      "topic_id": "commodity-001",
+      "headline": "布油维持高位震荡",
+      "summary": "地缘扰动未退，原油仍在高位波动区间。",
+      "published_at": "2026-04-29T06:50:00+08:00",
+      "url": "https://example.com/commodity-001",
+      "source_name": "Commodity Feed",
+      "confidence": "high"
+    },
+    {
+      "item_id": "gold",
+      "topic_id": "commodity-002",
+      "headline": "黄金延续避险买盘",
+      "summary": "避险需求支撑贵金属价格表现。",
+      "published_at": "2026-04-29T06:55:00+08:00",
+      "url": "https://example.com/commodity-002",
+      "source_name": "Commodity Feed",
+      "confidence": "medium"
+    }
+  ]
+}

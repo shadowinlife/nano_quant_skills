@@ -260,6 +260,85 @@
 | Phase 5 任务 | 9 | 8 | -1 (配置移至 P2) |
 | Phase 6 任务 | 14 | 16 | +2 (T054, T056) |
 
+---
+
+## 2026-04-29 实现验证补充证据
+
+### 已执行命令
+
+```bash
+conda run -n legonanobot pytest .github/skills/daily-market-brief/tests/ -q
+conda run -n legonanobot python .github/skills/daily-market-brief/src/main.py --help
+conda run -n legonanobot python .github/skills/daily-market-brief/src/validate_daily_run.py
+./.github/skills/daily-market-brief/validate-daily-run.sh
+```
+
+### 验证结果
+
+- `pytest .github/skills/daily-market-brief/tests/ -q`：通过，结果为 `8 passed`
+- `main.py --help`：通过，CLI 参数与 contract 对齐
+- `validate_daily_run.py`：通过，返回 `status: ok`
+- `validate-daily-run.sh`：通过，能委托到同一条 Python validation 链路
+
+### 环境快照
+
+- 系统：`darwin 25.4.0`
+- Python：`3.12.13`
+- config snapshot version：`8aeb37cbc8b0`
+
+### 卫生审计结果
+
+- 在 `.github/skills/daily-market-brief/` 下未发现提交型绝对路径或私钥内容
+- IDE 目录引用仅存在于 skill 自身 `.gitignore`，属于预期忽略规则
+- `tmp/` 下当前存在 `validation-smoke/` 与 `work-reports/`，均属于预期临时产物，并已被 skill 级 `.gitignore` 覆盖
+
+### 结论
+
+当前实现已满足首轮 MVP 的本地验证闭环，可进入 review 或后续提交流程。
+
+---
+
+## 2026-04-29 Review 收口补充证据
+
+### 本轮修复点
+
+- 修复聚合报告 `top_highlights` 缺失 `module_origins`，保证真实生成的 report 能通过聚合 schema 校验。
+- 为 CLI 增加 `--date` 的 `YYYY-MM-DD` 严格校验，阻止非法日期污染 `run_id` 和 artifact 目录。
+- 修正 `source_missing` 场景下的模块与报告摘要文案，避免把来源故障误报成“无新增”。
+- 将 `anomaly_flags` / `review_required` 从 source payload 贯通到 `ModuleResult` 和 `AggregatedReport`，使人工复核链路真实可达。
+- 补充真实 workflow 的 schema 回归断言，避免 contract 漏洞再次只在手工检查时暴露。
+
+### 已执行命令
+
+```bash
+/Users/mgong/miniforge3/envs/legonanobot/bin/python -m pytest .github/skills/daily-market-brief/tests/unit/test_main.py -q
+/Users/mgong/miniforge3/envs/legonanobot/bin/python -m pytest .github/skills/daily-market-brief/tests/unit/test_module_common.py -q
+/Users/mgong/miniforge3/envs/legonanobot/bin/python -m pytest .github/skills/daily-market-brief/tests/integration/test_full_workflow.py -q
+/Users/mgong/miniforge3/envs/legonanobot/bin/python -m pytest .github/skills/daily-market-brief/tests/ -q
+/Users/mgong/miniforge3/envs/legonanobot/bin/python .github/skills/daily-market-brief/src/main.py --date not-a-date --config .github/skills/daily-market-brief/config/config.example.yaml --stage final
+/Users/mgong/miniforge3/envs/legonanobot/bin/python .github/skills/daily-market-brief/src/validate_daily_run.py
+./.github/skills/daily-market-brief/validate-daily-run.sh
+```
+
+### 验证结果
+
+- 单测新增覆盖通过：`test_main.py`、`test_module_common.py`
+- workflow 集成测试通过，并对 temp/final 真实产物新增 schema 断言
+- 全量测试通过：`12 passed`
+- 非法日期输入现在在 CLI 层直接返回退出码 `2`
+- `validate_daily_run.py` 与 shell wrapper 均返回 `status: ok`
+
+### Review 建议关注点
+
+- `src/modules/common.py`：highlight contract、source_missing summary、review_required 贯通逻辑
+- `src/main.py`：CLI 日期校验入口
+- `tests/integration/test_full_workflow.py`：真实产物 schema 回归断言
+- `tests/unit/test_main.py` 与 `tests/unit/test_module_common.py`：新增边界回归
+
+### 结论
+
+当前阶段已完成，可进入人工 review。
+
 ### 需求覆盖率
 
 | 指标 | 原值 | 新值 | 改进 |

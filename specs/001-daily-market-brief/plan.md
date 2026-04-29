@@ -1,57 +1,37 @@
 # Implementation Plan: A股开盘核心新闻聚合研究 Skill
 
-**Branch**: `001-add-core-news-skill` | **Date**: 2026-04-28 | **Spec**: [specs/001-daily-market-brief/spec.md](spec.md)
-**Input**: Feature specification from `/specs/001-daily-market-brief/spec.md`
+**Branch**: `001-add-core-news-skill` | **Date**: 2026-04-29 | **Spec**: [spec.md](./spec.md)
+**Input**: Feature specification from `specs/001-daily-market-brief/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
 ## Summary
 
-该 Skill 的目标是为 A 股盘前投资研究提供每日核心新闻聚合与分析。通过集成多源信息（海外市场热点、主流财经媒体主线、自媒体共识、研报动态、大宗商品变化），生成结构化盘前简报。设计采用"混合架构"：轻量级 Python SKILL 作为核心编排引擎，可选集成 nano-search-mcp 与 tushare-duckdb-sync 作为数据源适配层。
+在 `.github/skills/daily-market-brief/` 下创建一个自包含的 Python Skill，用于按交易日生成 A 股盘前核心新闻聚合简报。首轮交付以“关键模块先出临时版、完整流程含 review 在 90 分钟内完成”为约束，优先落地稳定的 CLI、配置驱动范围控制、结构化中间结果、正式报告与缺口标记。
 
-### 规范一致性分析补救应用
-
-根据 `/speckit.analyze` 结果（2026-04-28），应用了以下关键补救措施确保需求覆盖率从 82% 提升至 97%：
-
-**Tier 1 严重问题（已解决）**:
-1. **C1 - 模块阶段错配**: 将社交共识（T024）和研报（T025）模块从 Phase 4 移至 Phase 3，确保 US1 MVP 包含所有 5 个模块
-2. **C2 - 配置实现时机**: 将配置加载（T007a, T041-T042 概念）移到 Phase 2 基础层，使 Phase 3-4 模块可从第一天使用动态配置
-3. **C3 - 宪法第 III 门时机**: 添加 T016a（最小验证 PoC）到 Phase 1，验证设计跨平台可移植性
-
-**Tier 2 高优先级问题（已解决）**:
-1. **H1**: 添加 T045-T046（性能基准 + 正常运行时间模拟测试）验证 SC-001/SC-002
-2. **H2**: 添加 T032-T033（冲突检测 + 去重复算法）到 Phase 3
-3. **H3**: 在 Phase 3/4 中添加明确的阶段边界文档
-4. **H4**: 添加 T028（关键模块定义列表）在 T027 前
-
-**结果**: 总任务从 60 增至 66；FR/SC 覆盖率达到 97%；所有 5 个宪法门都通过
-
-**核心决策**:
-- **D1 (发布策略 - 选项A)**: 采用分阶段发布策略——在关键模块结果生成时允许先产出临时版报告，后续在人工复核或迟到模块完成时补充修订版，以优先满足盘前时效需求。
-- **D2 (数据源探索 - 选项C)**: 采用"生产源/探索源"分层策略——首版依赖稳定接口（tushare/akshare/feedparser/RSS），定制爬虫方案仅作为候选补充路径记录在 docs/，不直接进入正式输出。
-- **D3 (自动化程度 - 最大化自动化)**: 尽可能向完全自动化靠拢——除关键质检点外，所有模块的人工审核需求应最小化；社媒和研报模块应优先采用自动发现+自动验证的流程，仅在数据质量异常时触发人工介入。
+任务拆分上采用“全故事覆盖、MVP 先落 US1”的方式：保留 US2 和 US3 的后续交付面，但不让长期运营与稳定性工作阻塞第一版可运行日报链路。
 
 ## Technical Context
 
-**Language/Version**: Python 3.11+ (aligned with nano_quant_skills infrastructure)  
-**Primary Dependencies**: tushare, akshare, feedparser (RSS), requests + optional MCP client (for nano-search-mcp integration)  
-**Storage**: YAML-based configuration + local Markdown/JSON intermediate results (Phase 1); SQLite/DuckDB as optional backend (Phase 2+)  
-**Testing**: pytest (unit), local opencode validation (integration), bash scripts for cross-platform compatibility  
-**Target Platform**: macOS, Linux, Windows (via portable Python + script wrappers)  
-**Project Type**: SKILL module + optional MCP client; delivers structured daily research reports  
-**Performance Goals**: Daily aggregation completes within 30 minutes from data collection to report generation; reports readable within 15 minutes by researcher  
-**Constraints**: Pre-market delivery (before 09:30 CN time); graceful degradation when individual sources unavailable; zero hardcoded local paths or credentials in commits  
-**Scale/Scope**: Initial coverage: 5-8 core US indices + 10-15 CN media sources + 20-30 social media accounts + 5-10 key research institutions + 10-15 commodity tracking items; expandable via config
+**Language/Version**: Python 3.10+，默认在 conda 环境 `legonanobot` 中执行  
+**Primary Dependencies**: `PyYAML`、`requests`、`feedparser`、`pytest`、`tushare`、`akshare`，以及标准库 `argparse`、`dataclasses`、`json`、`pathlib`、`logging`  
+**Storage**: 本地 YAML 配置、JSON 中间结果/缓存、Markdown 最终报告、规范化示例配置文件  
+**Testing**: `pytest`（unit/contract/integration）+ 跨平台 Python 验证入口 `src/validate_daily_run.py` + POSIX shell wrapper `validate-daily-run.sh`  
+**Target Platform**: macOS、Linux、Windows 本地命令行环境  
+**Project Type**: `.github/skills/daily-market-brief/` 下的自包含 Skill + Python CLI  
+**Performance Goals**: 单次完整流程覆盖数据拉取、处理、报告输出与人工 review 交接，整体在 90 分钟内完成；最终报告高光主题不超过 5 条、总板块不超过 10 个、单板块摘要控制在 60 个中文字符内  
+**Constraints**: 正式输出默认仅依赖生产源；必须支持配置驱动范围调整；缺失来源不得阻断整份报告；不得写入本机绝对路径、凭据或 IDE 元数据；临时版是流程编排能力而非单独 SLA  
+**Scale/Scope**: 5 个分析模块、每交易日 1 份独立报告、每模块保留结构化中间产物，并对核心跟踪清单逐项返回覆盖状态
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- **Portability gate** ✓ PASS: Core SKILL uses cross-platform Python; all subprocess calls wrapped in portable shell abstractions; fallback to graceful mode-down when platform-specific tools unavailable (e.g., cron → manual trigger on Windows).
-- **Setup gate** ✓ PASS: Lightweight setup requires only `pip install tushare akshare feedparser` + conda env already present (legonanobot); config YAML templates provided with sensible defaults; no external service startup required for Phase 1.
-- **Opencode validation gate** ✓ PASS: Local validation via `pytest tests/` + documented `./validate-daily-run.sh` script that runs one complete workflow locally and outputs verification checklist before commit.
-- **Reproducibility gate** ✓ PASS: Each module specifies input sources, output schema, error handling, and retry logic; deterministic invocation via CLI or SKILL entry point with explicit config paths.
-- **Hygiene and privacy gate** ✓ PASS: Configuration templates use placeholder credentials; validation script scans commits for hardcoded paths/secrets before pushing; temp files written to `.gitignore`-tracked `./tmp/` and `.cache/` dirs.
+- Portability gate: PASS. 通过 `src/utils/platform_compat.py` 统一路径、shell、subprocess 与输出目录行为；Windows 不依赖 bash 特性，必要时提供 Python fallback。  
+- Setup gate: PASS. 默认复用仓库既有 `legonanobot` conda 环境，以 `requirements.txt + config.example.yaml` 提供最小安装路径。  
+- Opencode validation gate: PASS. 跨平台验证命令定义为 `pytest .github/skills/daily-market-brief/tests/ -v`、`conda run -n legonanobot python .github/skills/daily-market-brief/src/main.py --help`、`conda run -n legonanobot python .github/skills/daily-market-brief/src/validate_daily_run.py`；macOS/Linux 额外提供 `./.github/skills/daily-market-brief/validate-daily-run.sh` 作为包装器。提交前将命令与结果记录到 [remediation-log.md](./remediation-log.md)。  
+- Reproducibility gate: PASS. CLI 参数、配置结构、模块 JSON Schema 与报告结构契约都将固定，且“部分成功但可出报告”的退出语义会显式定义。  
+- Hygiene and privacy gate: PASS. 仅提交脱敏示例配置；`.gitignore` 排除缓存、日志、临时结果；不允许凭据、本机路径或 IDE 产物进入仓库。
 
 ## Project Structure
 
@@ -59,123 +39,74 @@
 
 ```text
 specs/001-daily-market-brief/
-├── plan.md              # This file (/speckit.plan command output)
-├── research.md          # Phase 0 output (/speckit.plan command)
-├── data-model.md        # Phase 1 output (/speckit.plan command)
-├── quickstart.md        # Phase 1 output (/speckit.plan command)
-├── contracts/           # Phase 1 output (/speckit.plan command)
-│   ├── config-schema.md # YAML configuration contract for tracking lists
-│   ├── module-output.md # Intermediate result schema for each module
-│   └── report-format.md # Final aggregated report structure
-├── checklists/
-│   └── requirements.md  # Specification quality checklist
-└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
+├── plan.md
+├── research.md
+├── data-model.md
+├── quickstart.md
+├── contracts/
+└── tasks.md
 ```
 
 ### Source Code (repository root)
 
 ```text
 .github/skills/daily-market-brief/
-├── SKILL.md             # Skill definition for Copilot integration
-├── README.md            # Setup & usage guide
+├── SKILL.md
+├── README.md
+├── requirements.txt
+├── .gitignore
+├── validate-daily-run.sh
 ├── config/
-│   ├── tracking-lists.yaml     # User-maintained tracking config (social media, research institutions, commodities)
-│   └── config.example.yaml     # Template with defaults
-├── src/
-│   ├── main.py          # SKILL entry point & CLI
-│   ├── aggregator.py    # Main orchestration engine
-│   ├── modules/
-│   │   ├── us_market.py        # Module 1: US market hotspots (FULL AUTO)
-│   │   ├── media_mainline.py   # Module 2: CN media mainline extraction (FULL AUTO)
-│   │   ├── social_consensus.py # Module 3: Social media consensus (SEMI-AUTO: auto scrape + human review flag)
-│   │   ├── research_reports.py # Module 4: Research report tracking (SEMI-AUTO: discovery + manual validation)
-│   │   └── commodities.py      # Module 5: Commodity tracking (FULL AUTO)
-│   ├── sources/
-│   │   ├── us_market_feed.py   # US market hotspots (tushare + news API)
-│   │   ├── media_feed.py       # CN media RSS aggregation
-│   │   ├── social_feed.py      # Social media scraping (Weibo, Snowball, public APIs)
-│   │   ├── research_feed.py    # Research report discovery APIs
-│   │   └── commodity_feed.py   # Commodity price + news feeds
-│   └── utils/
-│       ├── config_loader.py    # YAML config parsing
-│       ├── report_builder.py   # Report aggregation & markdown export
-│       ├── cache_manager.py    # Local JSON cache for intermediate results
-│       ├── platform_compat.py  # Cross-platform path/subprocess handling
-│       └── logger.py           # Structured logging
-├── tests/
-│   ├── unit/
-│   │   ├── test_modules.py
-│   │   ├── test_sources.py
-│   │   ├── test_config.py
-│   │   └── test_report_builder.py
-│   └── integration/
-│       └── test_full_workflow.py
-│   └── fixtures/
-│       └── mock_data/
+│   ├── config.example.yaml
+│   ├── tracking-lists.yaml
+│   └── execution-phases.yaml
 ├── docs/
-│   ├── architecture.md         # Design rationale
-│   ├── source-evaluation.md    # Candidates: tushare, akshare, RSSHub, custom scrapers
-│   ├── data-model.md           # Generated in Phase 1
-│   └── contracts/              # Generated in Phase 1
-├── validate-daily-run.sh       # Local opencode validation script
-├── requirements.txt            # Python dependencies (tushare, akshare, feedparser, requests, ...)
-└── .gitignore                  # Exclude tmp/, .cache/, *.log, credentials
+├── src/
+│   ├── main.py
+│   ├── validate_daily_run.py
+│   ├── aggregator.py
+│   ├── models/
+│   ├── modules/
+│   ├── sources/
+│   └── utils/
+└── tests/
+    ├── contract/
+    ├── integration/
+    ├── unit/
+    └── fixtures/mock_data/
 ```
 
-## Phase 0: Research & Source Exploration
+**Structure Decision**: 采用“自包含 Skill 目录”而不是并入现有 Python package。这样可与仓库中现有 Skill 组织方式保持一致，降低对现有 MCP 和分析模块的包结构耦合，同时让配置、脚本、测试与文档围绕同一入口收敛。
 
-### Unknowns to Resolve
+## Complexity Tracking
 
-1. **US Market Hotspot Data Source**  
-   Research: Compare tushare vs. direct Yahoo/TradingView APIs for intraday US market sentiment & hotspots; identify most stable + accessible approach.
+当前无需为宪法例外开口子。复杂度风险主要来自任务切分而非架构本身，应通过收敛首轮交付边界而不是增加技术抽象来处理。
 
-2. **CN Media Mainline Information**  
-   Research: Map available RSS feeds from CNBC, ABC, 第一财经, 新浪财经, 雪球; evaluate coverage & latency; identify fallback sources if primary unavailable.
+## Phase 0 Research Focus
 
-3. **Social Media Consensus Extraction**  
-   Research: Explore Weibo API, Snowball (雪球) public APIs, WeChat subscription aggregators; define scope for "past 5 trading days" window; identify data freshness constraints.
+- 运行时基线：确定 Python 3.10+、`legonanobot` conda 环境与生产源依赖组合。
+- 输出契约：确定 CLI 入口、模块结果 Schema、聚合报告 Schema 与 Markdown 报告结构。
+- 交付边界：把“单次稳定产出盘前报告”与“长期稳定性/运营观测”拆开，避免首轮计划范围失控。
 
-4. **Research Report Discovery**  
-   Research: Identify available APIs for domestic research institutions (国信、东吴、中信等) & overseas firms (Goldman Sachs, Morgan Stanley); evaluate accessibility & update frequency.
+## Phase 1 Design Outputs
 
-5. **Commodity Price + Regional News**  
-   Research: Identify stable commodity price feeds (tushare, akshare, Bloomberg); map news sources for key production regions; define alert thresholds.
+- [research.md](./research.md)：记录技术选型与 MVP 范围决策。
+- [data-model.md](./data-model.md)：定义运行任务、模块结果、配置快照、主题高光与聚合报告实体。
+- [contracts/](./contracts/)：定义 CLI、模块输出和聚合报告的外部接口契约。
+- [quickstart.md](./quickstart.md)：定义本地 setup、运行和验证入口。
 
-6. **Data Source Stability & Fallback**  
-   Research: For each source type, document: API rate limits, SLA expectations, known failure modes, alternative providers, cost/license constraints.
+## Post-Design Constitution Re-Check
 
-### Output Artifacts
+- Portability: PASS，接口与目录设计未引入平台绑定路径。
+- Setup: PASS，快速开始仍然只依赖 conda 环境与示例配置。
+- Validation: PASS，已明确命令与证据记录位置。
+- Reproducibility: PASS，契约文件将约束 CLI 与输出结构。
+- Hygiene: PASS，脱敏配置与忽略规则已纳入计划。
 
-- **research.md**: Decision matrix for each source type with recommendations
-- Updated `docs/source-evaluation.md` with rationale & fallback strategies
-- Identified quick-start data sources for Phase 1 MVP
+## Task Plan Rationality Review
 
-## Phase 1: Design & Interface Contracts
-
-### Data Model (to be generated)
-
-Key entities:
-- **DailyRunTask**: Execution metadata (date, modules enabled, status)
-- **ModuleResult**: Structured output from each analysis module (summary, sources, confidence, human-review-needed flag)
-- **TrackingConfig**: User-maintained lists (social media, research institutions, commodities)
-- **AggregatedReport**: Final output with section-level prioritization & gap markers
-
-### Interface Contracts (to be generated)
-
-1. **Configuration Schema**: YAML structure for tracking lists, source endpoints, time windows
-2. **Module Output Schema**: JSON/Markdown intermediate result format (title, summary, sources, flags)
-3. **Report Format**: Final markdown report structure with sections, priority indicators, evidence linkage
-
-### Quickstart Guide (to be generated)
-
-- One-command setup (conda environment + pip install)
-- Example: `python .github/skills/daily-market-brief/src/main.py --date 2026-04-28 --config ./config/tracking-lists.yaml`
-- Expected output location & format
-
-## Phase 1 Post-Design: Agent Context Update
-
-After Phase 1 design completion, update `.github/copilot-instructions.md` to reference this plan file path.
-
-## Constitution Re-Check Post-Phase 1
-
-Confirm all five gates still passing with concrete design artifacts in place.
+- 结论：任务需要覆盖 US1、US2、US3 三个用户故事，但 MVP 实施顺序应停在 US1 完整跑通和验证闭环。
+- 建议保留在 MVP 的核心能力：基础目录/配置/模型/日志/缓存、关键数据源接入、单次完整流程、阶段性报告、缺口标记、对象级覆盖状态、基础 contract/integration tests。
+- 建议在 US2/US3 处理的能力：自动/人工边界沉淀、配置维护指南、范围扩展回归验证。
+- 建议后移到 post-MVP backlog 的能力：20 个交易日稳定性验证、运营指标沉淀、复杂跨模块冲突检测、全量去重优化、Windows 专项扩展文档。
+- 量化验收应以用户已确认口径为准：完整流程 90 分钟内完成；高光主题不超过 5 条；整篇报告不超过 10 个板块；单板块摘要不超过 60 字；SC-003 分子只统计 `covered`、`no_new`、`source_missing` 三类业务状态，`list_error` 单独审计，`disabled` 不计入分母。

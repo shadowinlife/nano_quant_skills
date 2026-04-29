@@ -1,0 +1,14 @@
+{
+  "records": [
+    {
+      "item_id": "citic",
+      "topic_id": "research-001",
+      "headline": "中信证券上调算力链景气判断",
+      "summary": "算力链供需改善，研究观点明显转强。",
+      "published_at": "2026-04-28T18:20:00+08:00",
+      "url": "https://example.com/research-001",
+      "source_name": "中信证券研究",
+      "confidence": "high"
+    }
+  ]
+}

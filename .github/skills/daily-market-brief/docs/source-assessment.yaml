@@ -1,0 +1,50 @@
+sources:
+  - source_id: us-market-rss
+    source_category: rss_feed
+    module_name: us_market
+    tier: production
+    coverage_scope: 海外市场开盘前主线新闻和情绪线索
+    availability_risk: medium
+    cost_notes: 免费 RSS，结构可能变动
+    fallback_source_id: media-mainline-rss
+    review_notes: 无 mock 时优先用 RSS，失败则降级为 source_missing
+
+  - source_id: media-mainline-rss
+    source_category: rss_feed
+    module_name: media_mainline
+    tier: production
+    coverage_scope: 主流财经媒体共识主线
+    availability_risk: medium
+    cost_notes: 免费 RSS，站点结构变更风险中等
+    fallback_source_id: us-market-rss
+    review_notes: critical 模块，必须显式标注缺口
+
+  - source_id: social-tracking-feeds
+    source_category: research_portal
+    module_name: social_consensus
+    tier: production
+    coverage_scope: 跟踪社媒账号的公开 feed 或 mock 数据
+    availability_risk: high
+    cost_notes: 公开来源覆盖不稳定
+    fallback_source_id: null
+    review_notes: 对象级 coverage 是主交付，不承诺所有来源都稳定可抓
+
+  - source_id: research-tracking-feeds
+    source_category: research_portal
+    module_name: research_reports
+    tier: production
+    coverage_scope: 跟踪券商与机构研报动态
+    availability_risk: high
+    cost_notes: 不同机构入口差异大
+    fallback_source_id: null
+    review_notes: 可通过 final 修订补充迟到来源
+
+  - source_id: commodity-symbol-feed
+    source_category: commodity_feed
+    module_name: commodities
+    tier: production
+    coverage_scope: 核心商品价格与相关资讯
+    availability_risk: high
+    cost_notes: live symbol adapter 仍需后续硬化
+    fallback_source_id: null
+    review_notes: 当前 MVP 以 mock 和显式 source_missing 为主
