@@ -209,3 +209,128 @@ def test_build_listing_url_uses_https_and_validates_stockid():
 
     with pytest.raises(ValueError):
         sina_reports.build_listing_url("bad-id", "annual")
+
+
+def test_fetch_report_content_prefers_pdf_notes(monkeypatch):
+    monkeypatch.setattr(
+        sina_reports,
+        "_http_get_gbk",
+        lambda url: (
+            '<html><body>'
+            '<a href="http://file.finance.sina.com.cn/211.154.219.97:9494/MRGG/CNSESZ_STOCK/2025/2025-8/2025-08-29/11407825.PDF" target="_blank">下载公告</a>'
+            '</body></html>'
+        ),
+    )
+    monkeypatch.setattr(sina_reports, "_http_get_binary", lambda url: b"%PDF-1.4")
+    monkeypatch.setattr(
+        sina_reports,
+        "_extract_pdf_text",
+        lambda data: "第一部分\n财务报表附注\n注释内容",
+    )
+    monkeypatch.setattr(
+        sina_reports,
+        "_extract_notes_text_from_pdf",
+        lambda text: "财务报表附注\n注释内容",
+    )
+    monkeypatch.setattr(sina_reports, "_extract_detail_text", lambda html: "HTML正文")
+
+    result = sina_reports.fetch_report_content("600519", "123456")
+
+    assert "【PDF来源】" in result
+    assert "【附注节选】" in result
+    assert "注释内容" in result
+    assert "HTML正文" not in result
+
+
+def test_fetch_report_content_falls_back_to_html_when_pdf_fails(monkeypatch):
+    monkeypatch.setattr(
+        sina_reports,
+        "_http_get_gbk",
+        lambda url: (
+            '<html><body>'
+            '<a href="http://file.finance.sina.com.cn/211.154.219.97:9494/MRGG/CNSESZ_STOCK/2025/2025-8/2025-08-29/11407825.PDF" target="_blank">下载公告</a>'
+            '</body></html>'
+        ),
+    )
+
+    def _raise_pdf_error(url: str) -> bytes:
+        raise RuntimeError("pdf error")
+
+    monkeypatch.setattr(sina_reports, "_http_get_binary", _raise_pdf_error)
+    monkeypatch.setattr(sina_reports, "_extract_detail_text", lambda html: "HTML正文")
+
+    result = sina_reports.fetch_report_content("600519", "123456")
+
+    assert result == "HTML正文"
+
+
+def test_find_pdf_url_in_detail_html_prefers_download_notice_link():
+    """优先匹配链接文本为「下载公告」的 file.finance.sina.com.cn 链接。"""
+    real_pdf_url = (
+        "http://file.finance.sina.com.cn/211.154.219.97:9494/MRGG/CNSESZ_STOCK/2025/2025-8/2025-08-29/11407825.PDF"
+    )
+    html = (
+        '<html><body>'
+        f'<a href="{real_pdf_url}" target="_blank">下载公告</a>'
+        '</body></html>'
+    )
+
+    result = sina_reports._find_pdf_url_in_detail_html(
+        html,
+        "https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?stockid=600519&id=123",
+    )
+
+    assert result == real_pdf_url
+
+
+def test_find_pdf_url_in_detail_html_rejects_untrusted_domain():
+    html = (
+        '<html><body>'
+        '<a href="https://evil.example.com/annual.pdf">下载公告</a>'
+        '<a href="http://file.finance.sina.com.cn/211.154.219.97:9494/MRGG/CNSESZ_STOCK/2025/2025-8/2025-08-29/11407825.PDF" target="_blank">下载公告</a>'
+        "</body></html>"
+    )
+
+    result = sina_reports._find_pdf_url_in_detail_html(
+        html,
+        "https://vip.stock.finance.sina.com.cn/corp/view/vCB_AllBulletinDetail.php?stockid=600519&id=123",
+    )
+
+    assert "evil.example.com" not in (result or "")
+    assert result is not None
+    assert "file.finance.sina.com.cn" in result
+
+
+def test_get_company_report_prefers_listing_pdf_url(monkeypatch):
+    tool = _get_company_report_tool()
+
+    monkeypatch.setattr(
+        sina_reports,
+        "fetch_report_listing",
+        lambda stockid, report_type: {
+            "listing_url": "http://example.com/listing",
+            "reports": [
+                {
+                    "date": "2024-04-07",
+                    "title": "2023年年度报告",
+                    "id": "r-2023",
+                    "url": "http://example.com/2023",
+                    "pdf_url": "https://vip.stock.finance.sina.com.cn/files/2023.pdf",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        sina_reports,
+        "_extract_content_from_pdf_url",
+        lambda pdf_url: "【PDF来源】x\n\n【附注节选】\n附注内容",
+    )
+
+    def _should_not_be_called(stockid: str, report_id: str) -> str:
+        raise AssertionError("should not call detail fallback")
+
+    monkeypatch.setattr(sina_reports, "fetch_report_content", _should_not_be_called)
+
+    result = tool("600519", 2023, "annual")
+
+    assert "附注内容" in result

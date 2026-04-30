@@ -11,7 +11,7 @@ user-invocable: true
 
 目标是评估企业每一元收入需要多少营运资金、多少固定资产，以及人均投入产出效率，并与行业标杆对比。
 
-> ⚠️ **人均口径重要说明**：Tushare DuckDB **没有员工总数字段**。脚本默认只能计算“单位人力成本产出” `revenue / c_paid_to_for_empl`，它反映的是每花 1 元人力成本能带回多少收入，**不能**替代「人均营收 / 人均利润」这一框架规则。真实人均指标**必须由用户人工提供年报披露的员工总数**（见下文 `--employee-count-bundle`）；脚本禁止用 `c_paid_to_for_empl / 假设年薪` 之类代理估算，未提供时 `per_capita_status = human-in-loop-required`。
+如果执行环境中存在年报下载工具，脚本应优先通过这些工具自动从年报「员工情况」章节提取在岗员工数，无需用户手动提供 `--employee-count-bundle`。仅当工具下载失败、解析失败或年报数据缺失时，才降级为 `per_capita_status = human-in-loop-required`，并在 `human_in_loop_requests` 中详细列出缺口年份和公司代码，请求用户补充。
 
 ## 适用场景
 

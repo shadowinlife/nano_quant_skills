@@ -14,16 +14,19 @@ page_type 与 view 的对应关系（固定，由页面导航链接确认）：
 
 from __future__ import annotations
 
+import io
 import logging
 import random
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Literal
 
 from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
+from pypdf import PdfReader
 
 from nano_search_mcp.config import get_settings
 
@@ -71,6 +74,13 @@ _REPORT_TITLE_PATTERNS: dict[str, str] = {
     "q1": r"(第一季度报告|一季度报告|一季报)",
     "q3": r"(第三季度报告|三季度报告|三季报)",
 }
+
+_ALLOWED_PDF_HOST_SUFFIXES = (".sina.com.cn", ".sinaimg.cn")
+# 「下载公告」按钮固定域名（file.finance.sina.com.cn 经 IP 直连）
+_ALLOWED_PDF_HOSTS = frozenset([
+    "vip.stock.finance.sina.com.cn",
+    "file.finance.sina.com.cn",
+])
 
 
 def _validate_stockid(stockid: str) -> str:
@@ -152,6 +162,146 @@ def _http_get_gbk(url: str, timeout: int = 15) -> str:
     ) from last_error
 
 
+def _http_get_binary(url: str, timeout: int = 30) -> bytes:
+    """抓取二进制内容（用于 PDF），支持重试。"""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"仅允许 http/https PDF 链接: {url}")
+
+    cfg = get_settings()
+    last_error: Exception | None = None
+    for attempt in range(cfg.http.max_retries):
+        if attempt > 0:
+            backoff = cfg.http.backoff_base ** attempt + random.uniform(0.2, 0.8)
+            logger.warning(
+                "[sina_reports] PDF 抓取失败，第 %d 次重试，退避 %.1fs: %s",
+                attempt,
+                backoff,
+                url,
+            )
+            time.sleep(backoff)
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": _UA})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+
+    raise RuntimeError(
+        f"抓取 PDF 失败，已重试 {cfg.http.max_retries} 次: {url}。最后错误: {last_error}"
+    ) from last_error
+
+
+def _is_allowed_pdf_url(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in _ALLOWED_PDF_HOSTS or any(
+        host.endswith(suffix) for suffix in _ALLOWED_PDF_HOST_SUFFIXES
+    )
+
+
+def _find_pdf_url_in_detail_html(html: str, detail_url: str) -> str | None:
+    """从详情页中提取「下载公告」PDF 链接。
+
+    优先精确匹配链接文本为「下载公告」的 <a> 标签（新浪财经定期报告页面固定样式）；
+    若未命中则回退到任意 .pdf 链接（兼容页面改版）。
+    仅信任白名单域名，防止 SSRF。
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    candidates: list[str] = []
+    for a in soup.find_all("a", href=True):
+        href = str(a.get("href") or "").strip()
+        if not href:
+            continue
+        full_url = urllib.parse.urljoin(detail_url, href)
+        if not _is_allowed_pdf_url(full_url):
+            continue
+        link_text = a.get_text(separator=" ", strip=True)
+        # 精确匹配：文字为「下载公告」
+        if link_text == "下载公告":
+            return full_url
+        # 保留作备用
+        if ".pdf" in full_url.lower() or "pdf" in link_text.lower():
+            candidates.append(full_url)
+    return candidates[0] if candidates else None
+
+
+def _extract_pdf_text(pdf_bytes: bytes, max_pages: int = 120) -> str:
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    chunks: list[str] = []
+    for idx, page in enumerate(reader.pages):
+        if idx >= max_pages:
+            break
+        text = page.extract_text() or ""
+        if text.strip():
+            chunks.append(text)
+    return "\n\n".join(chunks).strip()
+
+
+def _extract_notes_text_from_pdf(full_text: str) -> str | None:
+    """从 PDF 文本中抽取“财务报表附注”等重点段落。"""
+    if not full_text.strip():
+        return None
+
+    normalized = re.sub(r"\r\n?", "\n", full_text)
+    lines = [line.strip() for line in normalized.split("\n")]
+    lines = [line for line in lines if line]
+    if not lines:
+        return None
+
+    start_idx = -1
+    for idx, line in enumerate(lines):
+        if re.search(r"(财务报表|会计报表).{0,8}附注", line):
+            start_idx = idx
+            break
+        if re.fullmatch(r"(附注|报表附注)", line):
+            start_idx = idx
+            break
+
+    if start_idx == -1:
+        hit_indices = [
+            idx for idx, line in enumerate(lines)
+            if "附注" in line and "目录" not in line and len(line) <= 120
+        ]
+        if not hit_indices:
+            return None
+        snippets: list[str] = []
+        for idx in hit_indices[:20]:
+            left = max(0, idx - 1)
+            right = min(len(lines), idx + 2)
+            snippets.append("\n".join(lines[left:right]))
+        return "\n\n".join(snippets).strip() or None
+
+    end_idx = len(lines)
+    for idx in range(start_idx + 20, len(lines)):
+        line = lines[idx]
+        if re.match(r"^第[一二三四五六七八九十百]+节", line):
+            end_idx = idx
+            break
+
+    notes_lines = lines[start_idx:end_idx]
+    notes_text = "\n".join(notes_lines).strip()
+    if len(notes_text) > 30000:
+        notes_text = notes_text[:30000]
+    return notes_text or None
+
+
+def _extract_content_from_pdf_url(pdf_url: str) -> str | None:
+    """下载并解析 PDF，优先返回附注段落。"""
+    if not _is_allowed_pdf_url(pdf_url):
+        raise ValueError(f"不允许的 PDF 域名: {pdf_url}")
+    pdf_bytes = _http_get_binary(pdf_url)
+    pdf_text = _extract_pdf_text(pdf_bytes)
+    notes_text = _extract_notes_text_from_pdf(pdf_text)
+    if notes_text:
+        return f"【PDF来源】{pdf_url}\n\n【附注节选】\n{notes_text}"
+    if pdf_text:
+        return f"【PDF来源】{pdf_url}\n\n{pdf_text}"
+    return None
+
+
 def _extract_listing(html: str, stockid: str) -> list[dict[str, str]]:
     """解析列表页 HTML，提取报告条目（date, title, id, url）。"""
     soup = BeautifulSoup(html, "html.parser")
@@ -173,9 +323,43 @@ def _extract_listing(html: str, stockid: str) -> list[dict[str, str]]:
 
         title = a.get_text(strip=True)
         parent = a.parent
-        parent_text = parent.get_text(separator=" ", strip=True) if parent else ""
-        date_match = re.search(r"(\d{4}-\d{2}-\d{2})", parent_text)
-        date = date_match.group(1) if date_match else ""
+
+        # 优先从 <a> 的前序文本节点提取日期（新浪列表页结构：日期文本&nbsp;<a>标题</a><br>...）
+        date = ""
+        prev = a.previous_sibling
+        if prev is not None:
+            date_match = re.search(r"(\d{4}-\d{2}-\d{2})", str(prev))
+            if date_match:
+                date = date_match.group(1)
+        # 兜底：从父节点完整文本中搜索（兼容其他页面结构）
+        if not date:
+            parent_text = parent.get_text(separator=" ", strip=True) if parent else ""
+            date_match = re.search(r"(\d{4}-\d{2}-\d{2})", parent_text)
+            date = date_match.group(1) if date_match else ""
+
+        pdf_url = ""
+        if parent:
+            # 优先：链接文字为「下载公告」（新浪定期报告列表页固定样式）
+            fallback_pdf: str = ""
+            for sibling_link in parent.find_all("a", href=True):
+                sibling_href = str(sibling_link.get("href") or "").strip()
+                if not sibling_href:
+                    continue
+                # href 可能是绝对 URL（含 IP:port），直接使用；相对路径才拼接
+                if sibling_href.startswith(("http://", "https://")):
+                    candidate = sibling_href
+                else:
+                    candidate = urllib.parse.urljoin(_BASE_HTTPS, sibling_href)
+                if not _is_allowed_pdf_url(candidate):
+                    continue
+                sibling_text = sibling_link.get_text(separator=" ", strip=True)
+                if sibling_text == "下载公告":
+                    pdf_url = candidate
+                    break
+                if ".pdf" in candidate.lower() and not fallback_pdf:
+                    fallback_pdf = candidate
+            if not pdf_url:
+                pdf_url = fallback_pdf
 
         # 规范化 URL：始终指向经校验的 sina 详情页
         full_url = _build_detail_url(stockid, report_id)
@@ -185,6 +369,7 @@ def _extract_listing(html: str, stockid: str) -> list[dict[str, str]]:
             "title": title,
             "id": report_id,
             "url": full_url,
+            "pdf_url": pdf_url,
         })
 
     return entries
@@ -256,10 +441,21 @@ def fetch_report_listing(stockid: str, report_type: str) -> dict:
 
 
 def fetch_report_content(stockid: str, report_id: str) -> str:
-    """抓取单份报告的正文文本。"""
+    """抓取单份报告正文，优先解析 PDF 并提取附注。"""
     url = _build_detail_url(stockid, report_id)
     logger.info("[sina_reports] 抓取详情页: %s", url)
     html = _http_get_gbk(url)
+
+    pdf_url = _find_pdf_url_in_detail_html(html, url)
+    if pdf_url:
+        logger.info("[sina_reports] 发现 PDF 链接: %s", pdf_url)
+        try:
+            pdf_content = _extract_content_from_pdf_url(pdf_url)
+            if pdf_content:
+                return pdf_content
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[sina_reports] PDF 解析失败，回退 HTML 正文: %s", exc)
+
     return _extract_detail_text(html)
 
 
@@ -357,7 +553,17 @@ def register_sina_report_tools(mcp: FastMCP) -> None:
             f"来源：{target_report['url']}\n"
         )
         try:
-            content = fetch_report_content(stockid, target_report["id"])
+            listing_pdf_url = target_report.get("pdf_url")
+            content = None
+            if isinstance(listing_pdf_url, str) and listing_pdf_url:
+                try:
+                    logger.info("[sina_reports] 使用列表页 PDF 链接抓取: %s", listing_pdf_url)
+                    content = _extract_content_from_pdf_url(listing_pdf_url)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("[sina_reports] 列表页 PDF 解析失败，回退详情页: %s", exc)
+
+            if content is None:
+                content = fetch_report_content(stockid, target_report["id"])
             content = _clean_report_text(content)
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(
