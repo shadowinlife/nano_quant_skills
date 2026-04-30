@@ -41,3 +41,10 @@ fi
 
 cd "$PROJECT_ROOT"
 export PYTHONUNBUFFERED=1
+
+# Load .env if present (never commit .env to git)
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+	set -a
+	source "$SCRIPT_DIR/.env"
+	set +a
+fi

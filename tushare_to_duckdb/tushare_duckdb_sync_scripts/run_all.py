@@ -9,7 +9,7 @@ from typing import List
 
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
-WORKSPACE_ROOT = SCRIPT_ROOT.parent
+WORKSPACE_ROOT = SCRIPT_ROOT.parents[1]
 if str(WORKSPACE_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKSPACE_ROOT))
 
