@@ -134,6 +134,69 @@
 
 ---
 
+## Phase 7: Iteration Δ — Runtime Reliability & Observability (FR-021~FR-029, SC-006~SC-010)
+
+**Purpose**: 将 2026-04-29 真实数据端到端运行暴露的问题，按 plan.md Phase 0/1 增量、5 项 Clarifications 与新契约 `run-summary.schema.json` 落到运行时代码、测试与文档。所有任务都强化 US1 的可靠性，因此沿用 `[US1]` 标签。
+
+**Pre-requisite**: Phase 1~6 已完成（T001-T044 均为 [X]）
+
+### Contract Tests for Iteration Δ
+
+- [X] T045 [P] [US1] Create contract test for run summary artifacts in `.github/skills/daily-market-brief/tests/contract/test_run_summary_schema.py` validating produced `tmp/<date>/run-summary.json` against `specs/001-daily-market-brief/contracts/run-summary.schema.json`
+- [X] T046 [P] [US1] Extend `.github/skills/daily-market-brief/tests/contract/test_module_output.py` with cases asserting `semantic_drift`, `attempted_source_ids` and the new evidence fields (`trade_date`, `previous_session_gap_days`, `semantic_tag`) round-trip against the updated `module-result.schema.json`
+- [X] T047 [P] [US1] Extend `.github/skills/daily-market-brief/tests/contract/test_report_format.py` with a case asserting `run_summary_path` is emitted on every aggregated report
+
+### FR-021: Dependency Checking
+
+- [X] T048 [US1] Pin and document explicit minimum versions in `.github/skills/daily-market-brief/requirements.txt` for `feedparser>=6.0.11`, `akshare>=1.18`, `requests>=2.31`, `pyyaml>=6.0`, `jinja2>=3.1`, `jsonschema>=4.21`
+- [X] T049 [P] [US1] Implement failure taxonomy enum in `.github/skills/daily-market-brief/src/failure_taxonomy.py` (FR-022) covering `dependency_missing`, `network_timeout`, `http_non_2xx`, `parse_empty`, `source_schema_changed`, `unknown`
+- [X] T050 [P] [US1] Implement run summary writer in `.github/skills/daily-market-brief/src/run_summary.py` (FR-027) producing `tmp/<trade-date>/run-summary.json`
+- [X] T051 [US1] Implement preflight self-check in `.github/skills/daily-market-brief/src/preflight.py` (FR-021): import-check declared dependencies, return a `PreflightResult`
+- [X] T052 [US1] Wire preflight into `.github/skills/daily-market-brief/src/main.py` with `exit_code=4` on failure and `--skip-preflight` debug flag
+- [X] T053 [US1] Have `.github/skills/daily-market-brief/src/aggregator.py` call `run_summary.py` and set `run_summary_path`
+- [X] T054 [P] [US1] Create `.github/skills/daily-market-brief/tests/test_preflight.py` (10 tests)
+- [X] T055 [P] [US1] Create `.github/skills/daily-market-brief/tests/test_failure_taxonomy.py` (7 tests)
+- [X] T056 [P] [US1] Create `.github/skills/daily-market-brief/tests/test_run_summary.py` (5 tests)
+
+### FR-023: Semantic Tag Guard
+
+- [X] T057 [US1] Extend `.github/skills/daily-market-brief/src/modules/common.py` to detect semantic drift and populate `ModuleResult.semantic_drift`
+- [X] T058 [US1] Update `report_builder.py` to render `⚠️ 语义漂移检测` hint when `semantic_drift` set
+- [X] T059 [P] [US1] Add `semantic_tag` declarations to every entry in `.github/skills/daily-market-brief/docs/source-assessment.yaml`
+- [X] T060 [P] [US1] Create `.github/skills/daily-market-brief/tests/test_module_semantic_guard.py` (7 tests)
+
+### FR-024: Trade Date Provenance
+
+- [X] T061 [US1] Update `.github/skills/daily-market-brief/src/sources/commodity_feed.py` to populate `EvidenceRecord.trade_date` and `previous_session_gap_days`
+- [X] T062 [US1] Render "行情滞后 N 日" hint inline in Markdown section via `report_builder.py`
+- [X] T063 [P] [US1] Create `.github/skills/daily-market-brief/tests/test_trade_date_provenance.py` (7 tests)
+
+### FR-025: Placeholder Guard / FR-029: Disabled Reason
+
+- [X] T064 [US1] Extend `config_loader.py` to detect placeholder tokens in tracked items and enforce `disabled_reason` when `enabled=false`
+- [X] T065 [P] [US1] Create `.github/skills/daily-market-brief/tests/test_tracking_placeholder_guard.py` (9 tests)
+
+### FR-026: Source Independence
+
+- [X] T066 [US1] Implement source-independence checker in `.github/skills/daily-market-brief/src/utils/source_independence.py` and call it from `aggregator.py`
+- [X] T067 [P] [US1] Create `.github/skills/daily-market-brief/tests/test_source_redundancy.py` (8 tests)
+
+### FR-028: Stage Coverage Consistency
+
+- [X] T068 [US1] In `aggregator.py`, ensure `coverage_summary` totals match enabled tracked item count; on mismatch log warning
+- [X] T069 [P] [US1] Create `.github/skills/daily-market-brief/tests/test_stage_coverage_consistency.py` (6 tests)
+
+### FR-029: End-to-End Iteration Validation
+
+- [X] T070 [US1] Create iteration-level integration test in `.github/skills/daily-market-brief/tests/integration/test_iteration_runtime_reliability.py` (4 tests)
+- [X] T071 [US1] Append "Phase 7 / 2026-04-29 Iteration Δ" entry in `specs/001-daily-market-brief/remediation-log.md`
+- [X] T072 [P] [US1] Update `.github/skills/daily-market-brief/README.md` and `docs/quickstart.md` with preflight behavior, exit codes, `--skip-preflight`, run-summary artifact location
+- [X] T073 [US1] Add `disabled_reason` to `TrackingItem`, `skip_reason` to `ModuleResult`, enforce in `config_loader.py`, render in `report_builder.py`, unit test in `tests/unit/test_module_status_reason.py`
+
+**Checkpoint**: Iteration Δ delivers FR-021~FR-029 with contract tests, behavior unit tests, and an end-to-end integration test.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

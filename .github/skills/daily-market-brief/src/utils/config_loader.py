@@ -26,9 +26,20 @@ MODULE_TO_TRACKING_CATEGORY = {
     "commodities": "commodities",
 }
 
+# FR-025: canonical placeholder tokens (case-insensitive substring check)
+_PLACEHOLDER_TOKENS: frozenset[str] = frozenset(
+    {"placeholder", "example", "todo", "xxx", "示例", "占位", "待填"}
+)
+
 
 class ConfigValidationError(ValueError):
     pass
+
+
+def _has_placeholder(value: str) -> bool:
+    """Return True if *value* contains any canonical placeholder token (case-insensitive)."""
+    lower = value.lower()
+    return any(token in lower for token in _PLACEHOLDER_TOKENS)
 
 
 def _read_yaml(path_value: Path) -> dict[str, Any]:
@@ -68,6 +79,27 @@ def _normalize_tracking_items(category: str, raw_items: Any) -> list[TrackingIte
         if priority not in {"core", "extended"}:
             raise ConfigValidationError(f"Unsupported priority `{priority}` in `{category}`")
 
+        enabled = bool(entry.get("enabled", True))
+        disabled_reason = str(entry["disabled_reason"]).strip() if entry.get("disabled_reason") else None
+
+        # FR-029: disabled items must carry a disabled_reason
+        if not enabled and not disabled_reason:
+            raise ConfigValidationError(
+                f"{category}[{index}] has `enabled: false` but is missing `disabled_reason`"
+            )
+
+        # FR-025: reject placeholder tokens in display_name and source_locator
+        display_name_val = str(entry["display_name"])
+        source_locator_val = str(entry["source_locator"])
+        if _has_placeholder(display_name_val):
+            raise ConfigValidationError(
+                f"{category}[{index}] `display_name` contains a placeholder token: {display_name_val!r}"
+            )
+        if _has_placeholder(source_locator_val):
+            raise ConfigValidationError(
+                f"{category}[{index}] `source_locator` contains a placeholder token: {source_locator_val!r}"
+            )
+
         metadata = {
             key: value
             for key, value in entry.items()
@@ -77,6 +109,7 @@ def _normalize_tracking_items(category: str, raw_items: Any) -> list[TrackingIte
                 "item_type",
                 "display_name",
                 "enabled",
+                "disabled_reason",
                 "priority",
                 "source_locator",
                 "region",
@@ -88,13 +121,14 @@ def _normalize_tracking_items(category: str, raw_items: Any) -> list[TrackingIte
             TrackingItem(
                 item_id=item_id,
                 item_type=str(entry.get("item_type", item_type)),
-                display_name=str(entry["display_name"]),
-                enabled=bool(entry.get("enabled", True)),
+                display_name=display_name_val,
+                enabled=enabled,
                 priority=priority,
-                source_locator=str(entry["source_locator"]),
+                source_locator=source_locator_val,
                 region=str(entry["region"]) if entry.get("region") else None,
                 tags=[str(tag) for tag in entry.get("tags", [])],
                 metadata=metadata,
+                disabled_reason=disabled_reason,
             )
         )
 

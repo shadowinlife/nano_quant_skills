@@ -1,7 +1,13 @@
 PyYAML>=6.0
-requests>=2.32.0
+requests>=2.31.0
 feedparser>=6.0.11
+jinja2>=3.1
+jsonschema>=4.21.0
+akshare>=1.18.0
+
+# Runtime test dependency
 pytest>=8.3.0
-tushare>=1.4.21
-akshare>=1.16.0
-jsonschema>=4.23.0
+
+# Optional: token-gated Tushare data source (requires a paid API token).
+# Uncomment to enable Tushare-backed modules:
+# tushare>=1.4.21

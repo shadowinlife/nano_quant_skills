@@ -12,8 +12,8 @@ US_MARKET_FEEDS = [
         "source_name": "MarketWatch MarketPulse",
     },
     {
-        "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-        "source_name": "CNBC Top News",
+        "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+        "source_name": "WSJ Markets",
     },
 ]
 

@@ -123,6 +123,11 @@
       "type": "string",
       "minLength": 1
     },
+    "run_summary_path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Filesystem path to tmp/<trade-date>/run-summary.json. Required when a run-summary artifact exists for the run."
+    },
     "revision_of": {
       "type": "string"
     }

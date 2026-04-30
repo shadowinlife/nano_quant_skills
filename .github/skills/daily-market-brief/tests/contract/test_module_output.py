@@ -75,3 +75,56 @@ def test_module_result_requires_anomaly_flags_for_review_items() -> None:
 
     errors = sorted(validator.iter_errors(payload), key=lambda item: item.path)
     assert any("anomaly_flags" in error.message for error in errors)
+
+
+def test_module_result_with_semantic_drift_validates() -> None:
+    """FR-023: semantic_drift field is accepted by the schema."""
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    payload = ModuleResult(
+        run_id="2026-04-29:demo",
+        module="us_market",
+        stage="final",
+        status="confirmed",
+        time_window={"label": "近一个交易日"},
+        summary="美股科技板块普涨，情绪偏乐观。",
+        highlights=[],
+        tracking_coverage=[],
+        evidence=[],
+        semantic_drift={
+            "declared": {"language": "en", "region": "us", "media_type": "newswire"},
+            "observed": {"language": "zh", "region": "cn", "media_type": "newswire"},
+            "drift_categories": ["language", "region"],
+        },
+        attempted_source_ids=["us-market-rss"],
+    ).to_dict()
+    errors = sorted(validator.iter_errors(payload), key=lambda item: item.path)
+    assert errors == []
+
+
+def test_module_result_with_evidence_trade_date_validates() -> None:
+    """FR-024: trade_date and previous_session_gap_days on evidence are accepted."""
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    payload = ModuleResult(
+        run_id="2026-04-29:demo",
+        module="commodities",
+        stage="final",
+        status="confirmed",
+        time_window={"label": "近一个交易日"},
+        summary="原油价格下跌，黄金小幅上涨。",
+        highlights=[],
+        tracking_coverage=[],
+        evidence=[
+            EvidenceRecord(
+                evidence_id="ev-oil-001",
+                source_name="akshare:CL",
+                source_tier="production",
+                headline="原油 收报 75.00",
+                trade_date="2024-01-12",
+                previous_session_gap_days=3,
+            )
+        ],
+    ).to_dict()
+    errors = sorted(validator.iter_errors(payload), key=lambda item: item.path)
+    assert errors == []

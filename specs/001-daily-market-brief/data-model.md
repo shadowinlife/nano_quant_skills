@@ -95,7 +95,7 @@ Represents one module's structured output for a run.
 
 ### State Rules
 
-- `status = skipped` requires a skip reason in `summary`.
+- `status = skipped` requires a skip reason; the machine-readable value goes in the `skip_reason` field (see Extension: ModuleResult FR-029); the `summary` field retains a human-readable narrative and MUST NOT be used as the sole carrier of skip rationale.
 - `manual_review_required = true` implies at least one anomaly flag.
 - Config-driven modules should always emit `tracking_coverage`, even when no evidence is found.
 
@@ -190,3 +190,123 @@ Represents the source stability record required by the specification.
 - Config-driven `ModuleResult` records have many `CoverageStatus` entries derived from `TrackingItem`.
 - `HighlightTopic` items can appear inside both `ModuleResult` and `AggregatedReport`.
 - `SourceAssessment` records describe the adapters used by module source implementations.
+- One `DailyRunTask` produces exactly one `RunSummary` artifact, referenced by every `AggregatedReport` revision via `run_summary_path`.
+
+## Iteration Δ (2026-04-29)
+
+### Enum: FailureClass
+
+Canonical taxonomy used by every fetcher attempt and surfaced in `RunSummary.modules[].attempted_sources[].fail_class`.
+
+| Value | Meaning |
+|-------|---------|
+| `dependency_missing` | Required runtime dependency or client SDK is not importable. |
+| `network_timeout` | Network connection or socket timeout while reaching the source. |
+| `http_non_2xx` | HTTP response status code outside 2xx (e.g., 403, 404, 5xx). |
+| `parse_empty` | Source reachable but parser produced zero usable records. |
+| `source_schema_changed` | Source returned content the parser detected as structurally unexpected. |
+| `unknown` | Failure that could not be classified; MUST include a free-text note. |
+
+### Enum: SemanticTag
+
+Applied to `SourceAssessment.semantic_tag` and to evidence-level metadata; modules declare expected tags and compare with observed tags to detect semantic drift.
+
+| Field | Allowed Values (open enum) |
+|-------|----------------------------|
+| `language` | `zh`, `en`, `mixed` |
+| `region` | `cn`, `us`, `global`, plus ISO-3166 alpha-2 lowercase codes for finer scope |
+| `media_type` | `newswire`, `op_ed`, `market_data`, `regulator`, `social`, `research_report`, `commodity_data` |
+
+### Entity: RunSummary
+
+Persists the diagnostic complement to the aggregated report, written to `tmp/<trade-date>/run-summary.json`.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `run_id` | string | Yes | Same identifier as the parent `DailyRunTask` |
+| `generated_at` | datetime string | Yes | ISO 8601 |
+| `preflight` | object | Yes | `{ ok: boolean, missing: string[] }`; `ok=true` requires `missing` to be empty |
+| `modules` | object[] | Yes | One entry per attempted module |
+| `coverage_summary` | object | Yes | Mirrors `AggregatedReport.coverage_summary` |
+
+`modules[]` element fields:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `module` | enum | Yes | Module name (same enum as elsewhere) |
+| `declared_semantic_tag` | object | Yes | `{ language, region, media_type }` |
+| `declared_sources` | string[] | Yes | Stable identifiers of all sources declared as candidates |
+| `attempted_sources` | object[] | Yes | One entry per fetcher attempt; fields: `url`, `protocol ∈ {rss, sdk_api, http_scrape}`, `http_status`, `records`, `fail_class` (FailureClass), `semantic_tag` |
+| `final_status` | enum | Yes | Same enum as `ModuleResult.status` |
+| `semantic_drift` | object | No | Present only when drift detected: `{ declared, observed, drift_categories[] }` |
+
+### Extension: ModuleResult
+
+New optional fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `semantic_drift` | object | Mirrors `RunSummary.modules[].semantic_drift`; required when `status = review_required` due to semantic mismatch |
+| `attempted_source_ids` | string[] | Convenience reference back to the run-summary entries describing this module's fetcher attempts |
+
+Additional state rule:
+
+- When all hit sources fail the module's declared semantic tag, `status` MUST be set to `review_required`, `anomaly_flags` MUST contain `semantic_mismatch`, and the module MUST NOT participate in temp-stage critical-module readiness.
+
+### Extension: EvidenceRecord
+
+New optional fields used by market-data modules and by the semantic guardrail.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `trade_date` | date string | Real trading date returned by the data source; required for market-data modules |
+| `previous_session_gap_days` | integer | Present only when `\|trade_date - target_date\| > 5` calendar days; non-negative |
+| `semantic_tag` | object | `{ language, region, media_type }`; MAY be empty when source does not expose enough context |
+
+### Extension: AggregatedReport
+
+New required field when a run-summary artifact is produced:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `run_summary_path` | string | Relative or absolute filesystem path to `tmp/<trade-date>/run-summary.json` |
+
+### Extension: SourceAssessment
+
+New required field:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `semantic_tag` | object | `{ language, region, media_type }` declared for this source; consumed by the module semantic guardrail |
+
+### Extension: TrackingItem (FR-029)
+
+New optional field to satisfy the Module Status Reason requirement:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `disabled_reason` | string | Human-readable explanation for why this item has `enabled: false`. Required when `enabled` is false so future maintainers understand the decision without querying session history. |
+
+### Extension: ModuleResult (FR-029)
+
+New optional field added alongside the existing FR-023 `semantic_drift` extension:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `skip_reason` | string | Present when `status` is `skipped` (including config-disabled modules that map to `skipped` at runtime); records the runtime or config reason that caused the module to be excluded from the current run. When the reason originates from a `TrackingItem.disabled_reason`, that value SHOULD be copied here verbatim. |
+
+### Enum: PlaceholderTokens (FR-025)
+
+Canonical set of keywords used by the placeholder guardrail to detect incomplete tracking-list entries. Any tracking item whose name or URL **contains** one of these tokens (case-insensitive) triggers the guard.
+
+| Token | Notes |
+|-------|-------|
+| `placeholder` | English generic placeholder |
+| `example` | As in `example.com` or `example_account` |
+| `todo` | Unfinished item marker |
+| `xxx` | Common stand-in filler |
+| `示例` | Chinese "example" |
+| `占位` | Chinese "placeholder" |
+| `待填` | Chinese "to be filled" |
+
+This list is normative for `config_loader.py` T064 and the companion test T065. Additional tokens MAY be added via config, but the seven above are always active.

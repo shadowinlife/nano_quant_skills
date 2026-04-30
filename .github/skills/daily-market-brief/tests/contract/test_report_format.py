@@ -81,3 +81,21 @@ def test_aggregated_report_matches_contract_schema() -> None:
     assert errors == []
     assert len(report["top_highlights"]) <= 5
     assert len(report["sections"]) <= 10
+
+
+def test_aggregated_report_with_run_summary_path_validates() -> None:
+    """FR-027 (T047): run_summary_path on AggregatedReport is accepted by schema."""
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    report = build_aggregated_report(
+        run_id="2026-04-29:demo",
+        stage="final",
+        module_results=_sample_results(),
+        report_path="tmp/2026-04-29/report/report.final.md",
+        selected_modules=["us_market", "commodities"],
+    )
+    report.run_summary_path = "tmp/2026-04-29/run-summary.json"
+    payload = report.to_dict()
+    errors = sorted(validator.iter_errors(payload), key=lambda item: item.path)
+    assert errors == []
+    assert payload.get("run_summary_path") == "tmp/2026-04-29/run-summary.json"

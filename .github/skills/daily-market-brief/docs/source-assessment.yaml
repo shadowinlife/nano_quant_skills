@@ -8,6 +8,10 @@ sources:
     cost_notes: 免费 RSS，结构可能变动
     fallback_source_id: media-mainline-rss
     review_notes: 无 mock 时优先用 RSS，失败则降级为 source_missing
+    semantic_tag:
+      language: en
+      region: us
+      media_type: newswire
 
   - source_id: media-mainline-rss
     source_category: rss_feed
@@ -18,6 +22,10 @@ sources:
     cost_notes: 免费 RSS，站点结构变更风险中等
     fallback_source_id: us-market-rss
     review_notes: critical 模块，必须显式标注缺口
+    semantic_tag:
+      language: zh
+      region: cn
+      media_type: newswire
 
   - source_id: social-tracking-feeds
     source_category: research_portal
@@ -28,6 +36,10 @@ sources:
     cost_notes: 公开来源覆盖不稳定
     fallback_source_id: null
     review_notes: 对象级 coverage 是主交付，不承诺所有来源都稳定可抓
+    semantic_tag:
+      language: zh
+      region: cn
+      media_type: social
 
   - source_id: research-tracking-feeds
     source_category: research_portal
@@ -38,6 +50,10 @@ sources:
     cost_notes: 不同机构入口差异大
     fallback_source_id: null
     review_notes: 可通过 final 修订补充迟到来源
+    semantic_tag:
+      language: zh
+      region: cn
+      media_type: research_report
 
   - source_id: commodity-symbol-feed
     source_category: commodity_feed
@@ -48,3 +64,7 @@ sources:
     cost_notes: live symbol adapter 仍需后续硬化
     fallback_source_id: null
     review_notes: 当前 MVP 以 mock 和显式 source_missing 为主
+    semantic_tag:
+      language: zh
+      region: global
+      media_type: commodity_data

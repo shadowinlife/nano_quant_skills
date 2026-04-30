@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nano-quant-skills/specs/001-daily-market-brief/contracts/run-summary.schema.json",
+  "title": "DailyMarketBriefRunSummary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "generated_at", "preflight", "modules"],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "preflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "missing"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "missing": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Comma-rendered into stderr `PREFLIGHT_FAIL:` prefix when `ok` is false."
+        }
+      }
+    },
+    "modules": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/moduleEntry" }
+    },
+    "coverage_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "covered": { "type": "integer", "minimum": 0 },
+        "no_new": { "type": "integer", "minimum": 0 },
+        "source_missing": { "type": "integer", "minimum": 0 },
+        "list_error": { "type": "integer", "minimum": 0 },
+        "disabled": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "preflight": { "properties": { "ok": { "const": true } } } }
+      },
+      "then": {
+        "properties": {
+          "preflight": {
+            "properties": { "missing": { "maxItems": 0 } }
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "semanticTag": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": { "type": "string", "enum": ["zh", "en", "mixed"] },
+        "region": { "type": "string", "minLength": 1 },
+        "media_type": {
+          "type": "string",
+          "enum": [
+            "newswire",
+            "op_ed",
+            "market_data",
+            "regulator",
+            "social",
+            "research_report",
+            "commodity_data"
+          ]
+        }
+      }
+    },
+    "failureClass": {
+      "type": "string",
+      "enum": [
+        "dependency_missing",
+        "network_timeout",
+        "http_non_2xx",
+        "parse_empty",
+        "source_schema_changed",
+        "unknown"
+      ]
+    },
+    "protocolFamily": {
+      "type": "string",
+      "enum": ["rss", "sdk_api", "http_scrape"]
+    },
+    "moduleStatus": {
+      "type": "string",
+      "enum": [
+        "confirmed",
+        "pending",
+        "missing",
+        "skipped",
+        "error",
+        "review_required",
+        "disabled"
+      ]
+    },
+    "attemptedSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "protocol", "fail_class"],
+      "properties": {
+        "url": { "type": "string", "minLength": 1 },
+        "protocol": { "$ref": "#/definitions/protocolFamily" },
+        "http_status": { "type": ["integer", "null"], "minimum": 0 },
+        "records": { "type": "integer", "minimum": 0 },
+        "fail_class": {
+          "oneOf": [
+            { "$ref": "#/definitions/failureClass" },
+            { "type": "null" }
+          ],
+          "description": "null when the attempt succeeded; otherwise one of the FailureClass values."
+        },
+        "semantic_tag": { "$ref": "#/definitions/semanticTag" },
+        "note": { "type": "string" }
+      }
+    },
+    "moduleEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "module",
+        "declared_semantic_tag",
+        "declared_sources",
+        "attempted_sources",
+        "final_status"
+      ],
+      "properties": {
+        "module": {
+          "type": "string",
+          "enum": [
+            "us_market",
+            "media_mainline",
+            "social_consensus",
+            "research_reports",
+            "commodities"
+          ]
+        },
+        "declared_semantic_tag": { "$ref": "#/definitions/semanticTag" },
+        "declared_sources": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "attempted_sources": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/attemptedSource" }
+        },
+        "final_status": { "$ref": "#/definitions/moduleStatus" },
+        "semantic_drift": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["declared", "observed", "drift_categories"],
+          "properties": {
+            "declared": { "$ref": "#/definitions/semanticTag" },
+            "observed": { "$ref": "#/definitions/semanticTag" },
+            "drift_categories": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "enum": ["language", "region", "media_type"]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

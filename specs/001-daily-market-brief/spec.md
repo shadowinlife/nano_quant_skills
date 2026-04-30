@@ -2,9 +2,20 @@
 
 **Feature Branch**: `001-add-core-news-skill`  
 **Created**: 2026-04-28  
-**Status**: Ready for Review  
-**Implementation Progress**: T001-T044 已完成，本地验证闭环已通过，当前状态为待人工 review。  
+**Last Updated**: 2026-04-29  
+**Status**: Iterating after first real-data E2E run  
+**Implementation Progress**: T001-T044 已完成；2026-04-29 完成首次真实数据端到端运行（exit_code=0，3 个核心模块产出 temp+final 报告），同时暴露依赖静默降级、模块语义错配、伪造 trade_date、tracking-lists 占位符未强校验等问题，本轮规格迭代将其纳入 FR/SC。  
 **Input**: User description: "核心: 我想要创建一个新的SKILLS, 它的任务是执行每日最核心新闻的聚合分析, 为A股市场开盘投资提供基本的精炼内容. 它的分析路径如下: 1. 如果美股昨日交易, 采集美股昨日的操作热点 2. 采集财经媒体昨日的主线信息, 找到交叉高光的不多于5个信息 3. 基于指定配置表, 采集自媒体评论要点并总结过去5个交易日共同关注点 4. 基于指定配置表, 采集昨日新发布的研报, 覆盖海外和国内投研机构 5. 基于指定配置表, 追踪大宗商品价格与主要产区新闻 6. 汇总各子任务中间文件形成最终独立报告；同时对任务进行 step by step 规划、拆解自动执行与人工介入部分，并逐步探索稳定数据源。"
+
+## Clarifications
+
+### Session 2026-04-29
+
+- Q: Preflight 失败应使用什么退出语义，与既有 exit_code=3（关键模块未达发布）严格区分？ → A: 使用 exit_code=4 专门表示运行时自检失败（依赖缺失或关键配置缺失），与 0/2/3 保持互斥；stderr 第一行使用固定前缀 `PREFLIGHT_FAIL:` 标识具体缺失项，便于 CI 与运维脚本按码分流。
+- Q: FR-024 中 trade_date 与请求目标日期的"约定阈值"具体取多少？ → A: 阈值为 5 个日历日；超过 5 天则 record 必须显式标注 `previous_session_gap_days` 字段，且在报告中以"行情滞后"提示渲染。该阈值覆盖周末 + 单一节假日的常见缺口，又能在长假后强制人工复核。
+- Q: FR-023 当某模块所有命中源的语义标签均与模块声明不匹配时，模块状态如何？ → A: 模块状态降级为 `review_required`，不再标记 confirmed；报告渲染段落必须前置一行"⚠️ 语义偏离：模块声明 X，实际命中源 Y"，并在 run-summary 中记录偏离类别（语言 / 区域 / 媒体类型）。该模块不参与 temp 阶段的"关键模块就绪"判定。
+- Q: FR-026 与 SC-009 中"相互独立可互兜底"的判定标准是什么？ → A: 两条源被视为相互独立当且仅当满足以下三项中的任意两项：(1) 顶级域名不同；(2) 数据获取协议家族不同（RSS feed / 第三方 SDK API / HTTP 抓取分别视为不同家族）；(3) 数据提供方机构不同。仅域名不同（如同一家媒体的 RSS 与 API）不满足独立性。
+- Q: FR-027 运行摘要的存放位置与最低字段是什么？ → A: 输出到 `tmp/<date>/run-summary.json`，与 `report.{temp,final}.{json,md}` 同目录；最低字段：`run_id`、`generated_at`、`preflight`（含每项检查结果）、`modules[]`（每模块包含 `module`、`declared_sources`、`attempted_sources[]` 中每个源的 `url/protocol/http_status/records/fail_class`、`final_status`、`semantic_drift`），并在主聚合报告 JSON 中以 `run_summary_path` 字段反向引用。
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -59,6 +70,10 @@
 - 当自媒体、研报或大宗商品配置表为空、过期或部分失效时，系统如何提示并限制错误传播？
 - 当同一主题在不同模块中重复出现时，系统如何合并重复表述并保留最重要证据？
 - 当报告生成时间临近开盘、部分子任务超时或人工审核未完成时，系统如何产出可用的阶段性结果？
+- 当运行环境缺失关键依赖（如 RSS 解析、数据接口客户端）时，系统如何区分“依赖缺失”“网络不可达”“数据源 4xx/5xx”，避免统一退化为模糊的 source_missing？
+- 当某模块业务语义（如“主流财经媒体”指向国内中文媒体）与当前可用数据源（仅剩英文媒体）发生错配时，系统如何提示模块语义偏离而不是默认放行？
+- 当外部行情数据返回的最近一行交易日期与请求日期不一致（节假日、停盘、跨周）时，报告如何避免把请求日期当成行情日期，避免日期标签伪造？
+- 当配置表中存在占位符（example.com、TODO、placeholder）但对应模块仍处于 enabled 状态时，系统如何阻断启动而非静默产出空结果？
 
 ## Requirements *(mandatory)*
 
@@ -84,14 +99,25 @@
 - **FR-018 (Local Setup)**: Feature MUST provide a lightweight local setup flow suitable for open-source users with minimal configuration steps.
 - **FR-019 (Opencode Validation)**: Feature MUST define local opencode validation commands and objective pass criteria before commit.
 - **FR-020 (Commit Hygiene)**: Feature deliverables and workflows MUST prevent IDE metadata, temporary files, local absolute paths, and sensitive local configuration from entering repository history.
+- **FR-021 (Runtime Preflight)**: 系统 MUST 在执行核心流程前完成运行时自检，至少覆盖关键运行依赖、关键配置文件存在性与可读性、关键外部接口客户端可导入；任何前置检查失败 MUST 以 exit_code=4 中止流程（与 exit_code=3 "关键模块未达发布" 严格互斥），并在 stderr 首行以固定前缀 `PREFLIGHT_FAIL:` 输出具体缺失项清单；系统内部未捕获异常 MUST 以 exit_code=5 退出（与 exit_code=4 严格互斥，与 exit_code=0/2/3 互斥）。
+- **FR-022 (Source Failure Taxonomy)**: 系统 MUST 在每次抓取尝试时记录可区分的失败类别（依赖缺失 / 网络超时 / HTTP 非 2xx / 解析空结果 / 数据源结构变更），并将该类别写入运行日志与可审计的运行摘要，供事后复盘定位根因。
+- **FR-023 (Module Semantic Guardrail)**: 系统 MUST 为每个分析模块声明业务语义标签（目标语言 / 覆盖区域 / 媒体类型）；当模块运行时所有命中数据源的语义标签与模块声明不一致时，系统 MUST 将该模块状态降为 `review_required`、不计入 temp 阶段关键模块就绪判定，并在报告对应段落首行输出 “⚠️ 语义偏离：模块声明 X，实际命中源 Y” 提示，同时在运行摘要中记录偏离类别（语言 / 区域 / 媒体类型）。
+- **FR-024 (Trade Date Provenance)**: 涉及行情或交易日数据的模块 MUST 使用数据源返回的真实交易日期作为 record 的 trade_date，禁止把命令行/调度器请求的目标日期回填为行情日期；当真实交易日期与请求目标日期相差超过 5 个日历日时，MUST 在 record 中写入 `previous_session_gap_days` 字段并在报告中渲染 “行情滑后” 提示以触发人工复核。
+- **FR-025 (Tracking-List Placeholder Guardrail)**: 系统 MUST 在加载跟踪配置表时扫描 `data-model.md` PlaceholderTokens 枚举定义的 7 个规范占位符关键词（`placeholder`、`example`、`todo`、`xxx`、`示例`、`占位`、`待填`；大小写不敏感，contains 匹配），若启用项命中占位符则 MUST 中止启动并提示需要补全；禁用项命中时 MUST 写入告警以便后续清理。
+- **FR-026 (Source Redundancy)**: 关键模块（驱动 temp 阶段发布的模块）MUST 至少声明两条相互独立、可互为兜底的数据源路径，“独立”定义为：两条源同时满足以下三项中的任意两项——（1）顶级域名不同；（2）数据获取协议家族不同（RSS feed / 第三方 SDK API / HTTP 抓取分别为独立家族）；（3）数据提供方机构不同。当首选源失败时系统 MUST 自动尝试备用源，仅在所有声明源均失败时才把模块状态降级为 source_missing。
+- **FR-027 (Run Observability)**: 系统 MUST 为每次运行产出可机读的运行摘要文件 `tmp/<date>/run-summary.json`（与 `report.{temp,final}.{json,md}` 同目录），最低字段包含：`run_id`、`generated_at`、`preflight`（每项检查结果）、`modules[]`（每个模块含 `module`、`declared_semantic_tag`、`declared_sources`、`attempted_sources[]` 中每个源的 `url/protocol/http_status/records/fail_class`、`final_status`、`semantic_drift`）；主聚合报告 JSON MUST 以 `run_summary_path` 字段反向引用该文件。
+- **FR-028 (Stage Coverage Consistency)**: 当 temp 阶段已确认某些模块的内容时，temp 阶段报告中的覆盖统计 MUST 把这些模块计入对应业务状态分类，避免出现“模块已 confirmed 但 covered=0”这类自相矛盾的统计。
+- **FR-029 (Module Status Reason)**: 当任一模块被设置为禁用或被运行时强制跳过时，系统 MUST 在配置或报告中保留可追溯的原因记录，使后续维护者能在不查阅历史会话的前提下理解禁用决策。
 
 ### Key Entities *(include if feature involves data)*
 
 - **研究日报任务**: 一次面向特定交易日执行的完整聚合分析，包含执行时间、覆盖模块、完成状态和最终报告。
 - **分析模块结果**: 某一子任务生成的中间结果，包含摘要、证据来源、时间范围、状态标记和人工复核需求。
-- **跟踪配置表**: 用户维护的观察清单，定义需要跟踪的自媒体、研报机构、大宗商品主题及启用状态。
+- **跟踪配置表**: 用户维护的观察清单，定义需要跟踪的自媒体、研报机构、大宗商品主题及启用状态；同时承载占位符校验、禁用原因等元信息。
 - **高光主题**: 在多个来源中被重复提及、适合纳入盘前报告重点关注的市场主题。
-- **来源稳定性记录**: 针对候选数据来源维护的评估信息，包含覆盖范围、可靠性、成本、故障模式和替代策略。
+- **来源稳定性记录**: 针对候选数据来源维护的评估信息，包含覆盖范围、可靠性、成本、故障模式、替代策略以及业务语义标签（语言、区域、媒体类型）。
+- **运行摘要**: 一次完整执行的可机读复盘记录，包含运行时自检结果、每个模块尝试的源清单、命中/降级原因分类、模块最终业务状态，与最终报告一并归档。
+- **失败分类**: 抓取失败的标准化原因枚举（依赖缺失 / 网络超时 / HTTP 非 2xx / 解析空结果 / 数据源结构变更等），用于跨模块统一统计与告警。
 
 ## Success Criteria *(mandatory)*
 
@@ -102,6 +128,11 @@
 - **SC-003**: 对于配置表中已启用且未被禁用的跟踪对象，至少 95% 能在对应模块结果中得到 `covered`、`no_new` 或 `source_missing` 三类业务状态之一的明确状态；`list_error` 作为显式错误状态单独审计但不计入达标分子，`disabled` 不计入分母。
 - **SC-004**: 维护者能够在不改动流程主体的前提下，于 10 分钟内完成一次跟踪清单调整，并在下一次执行结果中看到范围变化。
 - **SC-005**: 每个子任务都具备可审阅的自动执行说明和人工介入说明，使新维护者能够在 30 分钟内理解全流程的阶段划分与责任边界。
+- **SC-006 (Preflight Coverage)**: 在缺失关键运行依赖或关键配置的环境下，至少 95% 的此类失败能在运行时自检阶段被准确识别并以可区分的退出语义中止，而不是穿透到模块阶段后退化为模糊的 source_missing。
+- **SC-007 (Failure Diagnosability)**: 对任意一次失败的运行，运维人员仅凭运行摘要应能在 5 分钟内定位到具体失败模块、具体失败源以及标准化失败分类，无需阅读源代码或重新插桩。
+- **SC-008 (Trade Date Fidelity)**: 在涉及行情/交易日的模块输出中，至少 99% 的 record 的 trade_date 与所引用数据源返回的真实交易日期一致；不一致 record 必须带间隔标注，禁止默认回填请求日期。
+- **SC-009 (Critical Module Redundancy)**: 驱动 temp 阶段发布的关键模块在连续 20 个交易日内，没有出现"仅剩单一可用源"的情况；任一关键模块声明的源数量始终 ≥ 2。（post-MVP 稳定性观测目标；T066/T067 覆盖静态声明校验，20 日追踪在 SC-002 同期稳定性阶段执行，不阻塞首轮 MVP）
+- **SC-010 (Tracking List Hygiene)**: 任一启用模块对应的跟踪清单中占位符条目数为 0；对禁用模块的占位符条目维持告警可见，不计入主指标但可被审计。
 
 ## Assumptions
 
@@ -114,3 +145,8 @@
 - 首版默认采用“生产源/探索源”分层策略，其中探索源只作为候选补充路径记录，不直接进入正式输出。
 - 首版默认按模块维护核心清单作为最小可用覆盖范围，扩展清单在后续迭代中逐步纳入。
 - SC-002 属于 post-MVP 稳定性硬化目标，不作为首轮 MVP 交付阻塞条件。
+- 关键运行依赖以及关键外部接口客户端的存在性被视为运行时基础前置条件，缺失时系统以独立退出语义中止，而非延迟到模块阶段降级。
+- 抓取失败统一按标准化失败分类记录；运行摘要被视为与最终报告同等重要的归档物。
+- 模块业务语义（语言/区域/媒体类型）被视为模块契约的一部分；当所有可用源不再满足模块语义时，应优先标注偏离或重命名，而不是默默用替代语义的源充数。
+- 行情/交易日数据的 trade_date 以数据源返回值为准，请求日期仅作为查询入参，不参与 record 字段回填。
+- 跟踪配置表中的占位符在启用项中视为阻断式错误；本轮迭代默认未来核心模块至少声明两条相互独立的数据源路径。

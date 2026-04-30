@@ -111,3 +111,62 @@
 
 - Keep in MVP: foundational utilities, config baseline, core source adapters, all five module entry points, staged aggregation, object-level status reporting, contract tests, one full integration path.
 - Move to post-MVP unless needed by implementation evidence: advanced conflict detection, advanced deduplication, 20-day uptime simulation, operational metrics, and Windows-specific companion docs beyond the minimal validation fallback note.
+
+## Decision 9: Preflight Exit Semantics
+
+**Decision**: 运行时自检失败使用 `exit_code=4`，与 `exit_code=3`（关键模块未达发布）严格互斥；stderr 首行以固定前缀 `PREFLIGHT_FAIL: <comma-separated missing items>` 输出。
+
+**Rationale**:
+- 运维脚本/CI 按退出码路由最可靠；错误信息依赖 stderr 文本匹配会随语言、本地化、额外换行走样。
+- exit_code=4 在现有 `0/2/3` 上补齐，与原“内部错误”语义的并陈位可使用。内部错误如仍需表达，可后续预留 5。
+
+**Alternatives considered**:
+- 统一 exit_code=3 + 靠 stderr 文本分流：拒绝，不可靠。
+- 十位段退出码（10/11/12）：拒绝，过度分类产生与 shell “重要退出码”约定冲突。
+
+## Decision 10: Trade Date Tolerance
+
+**Decision**: 请求目标日期与数据源返回交易日期偏差超过 5 个日历日时，record MUST 写入 `previous_session_gap_days` 字段并在报告中渲染“行情滑后”提示。
+
+**Rationale**:
+- 5 日同时覆盖周末 + 单一节假日的常规缺口，不会在正常场景误报。
+- 超出 5 日多发生于长假后第一个交易日，此时人工复核价值高于隐藏偏离。
+
+**Alternatives considered**:
+- 严格按交易日历：拒绝，需要额外补入交易所日历与多市场时区处理，超出最小闭环。
+- 仅靠 modify_time 不看 trade_date：拒绝，多个提供方 modify_time 与行情日期不一致。
+
+## Decision 11: Module Semantic Guard Behavior
+
+**Decision**: 当模块声明的业务语义标签（语言 / 区域 / 媒体类型）与所有命中源都不一致时，模块状态降为 `review_required`、不参与 temp 关键模块就绪判定，并在报告对应段落首行输出 “⚠️ 语义偏离：模块声明 X，实际命中源 Y” 提示。
+
+**Rationale**:
+- 避免“主流财经媒体”模块默默填充英文外媒这类误导。
+- review_required 在现有状态枚举中已有，复用减少变更面。
+
+**Alternatives considered**:
+- 直接标记 confirmed 并加水印：拒绝，子会让下游译读者仍以为语义正确。
+- 直接报 error：拒绝，误将“语义偏离”与“抓取失败”同语义。
+
+## Decision 12: Source Independence Criterion
+
+**Decision**: 两条源被视为“相互独立”当且仅当满足以下三项中任意两项：（1）顶级域名不同；（2）数据获取协议家族不同（RSS feed / 第三方 SDK API / HTTP 抓取分别为独立家族）；（3）数据提供方机构不同。
+
+**Rationale**:
+- 仅靠域名差异会把同机构多个接入点（如同家媒体的 RSS 与 API）误判为冗余；仅靠机构不同可能忽略同一 CDN/接入点同时不可达的风险。三项选二是最小使决策可复制。
+
+**Alternatives considered**:
+- 顶级域名 + 机构都必须不同：拒绝，过于严苛，MVP 很难获得两份独立机构源。
+- 只要三项中任一项成立：拒绝，同机构同协议不同域名会被误判为冗余。
+
+## Decision 13: Run Summary Artifact Location
+
+**Decision**: 运行摘要输出到 `tmp/<trade-date>/run-summary.json`，与 `report.{temp,final}.{json,md}` 同目录；主聚合报告 JSON 以 `run_summary_path` 字段反向引用。
+
+**Rationale**:
+- 同目录保证归档原子性（报告与诊断成对打包上传/存档）。
+- 反向引用让下游只要拿到报告就能看到诊断文件路径，不需额外约定。
+
+**Alternatives considered**:
+- 写入 logs/ 目录：拒绝，与其他运行产物脱贝，难以跨运行对齐。
+- 只写 stdout：拒绝，无法持久化复盘。

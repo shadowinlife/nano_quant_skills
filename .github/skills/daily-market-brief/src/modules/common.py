@@ -12,6 +12,38 @@ from models import now_iso
 from utils.report_builder import truncate_summary
 
 
+# Declared semantic tags per module — used for drift detection.
+MODULE_DECLARED_SEMANTIC_TAGS: dict[str, dict[str, Any]] = {
+    "us_market": {"language": "en", "region": "us", "media_type": "newswire"},
+    "media_mainline": {"language": "zh", "region": "cn", "media_type": "newswire"},
+    "social_consensus": {"language": "zh", "region": "cn", "media_type": "social"},
+    "research_reports": {"language": "zh", "region": "cn", "media_type": "research_report"},
+    "commodities": {"language": "zh", "region": "global", "media_type": "commodity_data"},
+}
+
+
+def detect_semantic_drift(
+    declared: dict[str, Any] | None,
+    observed: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Compare declared vs observed semantic_tag. Return drift dict or None."""
+    if not declared or not observed:
+        return None
+    drift_categories: list[str] = []
+    for dim in ("language", "region", "media_type"):
+        d_val = declared.get(dim)
+        o_val = observed.get(dim)
+        if d_val and o_val and d_val != o_val:
+            drift_categories.append(dim)
+    if not drift_categories:
+        return None
+    return {
+        "declared": declared,
+        "observed": observed,
+        "drift_categories": drift_categories,
+    }
+
+
 def build_tracking_coverage(
     tracking_items: list[TrackingItem],
     records: list[dict[str, Any]],
@@ -70,6 +102,7 @@ def build_module_result(
     tracking_items: list[TrackingItem] | None = None,
     manual_review_required: bool = False,
     anomaly_flags: list[str] | None = None,
+    observed_semantic_tag: dict[str, Any] | None = None,
 ) -> ModuleResult:
     records = list(source_payload.get("records", []))
     source_state = str(source_payload.get("source_state", "ok"))
@@ -100,6 +133,9 @@ def build_module_result(
                 published_at=str(record.get("published_at") or "") or None,
                 url=str(record.get("url") or "") or None,
                 snippet=str(record.get("summary") or "") or None,
+                trade_date=str(record.get("trade_date")) if record.get("trade_date") else None,
+                previous_session_gap_days=int(record["previous_session_gap_days"])
+                if record.get("previous_session_gap_days") is not None else None,
             )
         )
         highlights.append(
@@ -128,6 +164,11 @@ def build_module_result(
     )
 
     tracking_coverage = build_tracking_coverage(tracking_items or [], records, source_state, note)
+
+    # --- Semantic drift detection (FR-023) ---
+    declared_tag = MODULE_DECLARED_SEMANTIC_TAGS.get(module)
+    observed_tag = observed_semantic_tag or source_payload.get("semantic_tag")
+    drift = detect_semantic_drift(declared_tag, observed_tag)
 
     if manual_review_required:
         status = "review_required"
@@ -173,6 +214,7 @@ def build_module_result(
         anomaly_flags=deduped_anomaly_flags,
         notes=[note] if note else [],
         cache_key=f"{run_id}:{module}",
+        semantic_drift=drift,
     )
 
 

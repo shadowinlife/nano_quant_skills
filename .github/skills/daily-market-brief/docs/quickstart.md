@@ -80,11 +80,30 @@ conda run -n legonanobot python .github/skills/daily-market-brief/src/main.py \
   --modules us_market,media_mainline,commodities
 ```
 
+跳过预检（CI/离线/快速重跑）：
+
+```bash
+conda run -n legonanobot python .github/skills/daily-market-brief/src/main.py \
+  --date 2026-04-29 \
+  --config .github/skills/daily-market-brief/config/local.yaml \
+  --skip-preflight
+```
+
+## 退出码含义
+
+| 代码 | 含义 |
+|------|-----|
+| `0` | 所有关键模块成功 |
+| `3` | 部分模块缺数据（strict 模式或关键模块失败） |
+| `4` | 预检失败 — stderr: `PREFLIGHT_FAIL: <缺少依赖>` |
+| `5` | 内部未预期异常 — stderr: `INTERNAL_ERROR: <消息>` |
+
 ## 产物位置
 
 - 模块 JSON：`.github/skills/daily-market-brief/tmp/<trade-date>/module-results/*.json`
 - 聚合 JSON：`.github/skills/daily-market-brief/tmp/<trade-date>/report/report.<stage>.json`
 - Markdown 报告：`.github/skills/daily-market-brief/tmp/<trade-date>/report/report.<stage>.md`
+- **运行摘要**：`.github/skills/daily-market-brief/tmp/<trade-date>/report/run-summary.json`（FR-027）
 - 临时工作报告：`.github/skills/daily-market-brief/tmp/work-reports/*.md`
 
 ## 平台说明

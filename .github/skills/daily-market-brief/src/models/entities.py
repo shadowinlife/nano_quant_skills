@@ -38,6 +38,7 @@ class TrackingItem:
     region: str | None = None
     tags: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    disabled_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -112,6 +113,9 @@ class EvidenceRecord:
     published_at: str | None = None
     url: str | None = None
     snippet: str | None = None
+    trade_date: str | None = None
+    previous_session_gap_days: int | None = None
+    semantic_tag: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = {
@@ -126,6 +130,12 @@ class EvidenceRecord:
             data["url"] = self.url
         if self.snippet:
             data["snippet"] = self.snippet
+        if self.trade_date:
+            data["trade_date"] = self.trade_date
+        if self.previous_session_gap_days is not None:
+            data["previous_session_gap_days"] = self.previous_session_gap_days
+        if self.semantic_tag:
+            data["semantic_tag"] = self.semantic_tag
         return data
 
 
@@ -145,6 +155,9 @@ class ModuleResult:
     anomaly_flags: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     cache_key: str | None = None
+    semantic_drift: dict[str, Any] | None = None
+    attempted_source_ids: list[str] = field(default_factory=list)
+    skip_reason: str | None = None
 
     @property
     def result_id(self) -> str:
@@ -170,6 +183,12 @@ class ModuleResult:
             data["notes"] = self.notes
         if self.cache_key:
             data["cache_key"] = self.cache_key
+        if self.semantic_drift is not None:
+            data["semantic_drift"] = self.semantic_drift
+        if self.attempted_source_ids:
+            data["attempted_source_ids"] = self.attempted_source_ids
+        if self.skip_reason is not None:
+            data["skip_reason"] = self.skip_reason
         return data
 
 
@@ -209,6 +228,7 @@ class AggregatedReport:
     coverage_summary: dict[str, int]
     report_path: str
     revision_of: str | None = None
+    run_summary_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -225,6 +245,8 @@ class AggregatedReport:
         }
         if self.revision_of:
             data["revision_of"] = self.revision_of
+        if self.run_summary_path:
+            data["run_summary_path"] = self.run_summary_path
         return data
 
 

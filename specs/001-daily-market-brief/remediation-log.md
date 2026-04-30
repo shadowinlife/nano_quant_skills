@@ -422,3 +422,59 @@ conda run -n legonanobot python .github/skills/daily-market-brief/src/validate_d
 
 **下一步**: `/speckit.implement` 可以立即开始 - MVP 现在已准备就绪!
 
+---
+
+## Phase 7 运行时可靠性与可观测性 (FR-021~FR-029)
+
+**实施日期**: 2026-04-30  
+**分支**: `001-add-core-news-skill`  
+**测试结果**: ✅ 86 passed (含 49 个新测试)
+
+### 新增源码文件
+
+| 文件 | 用途 | FR |
+|------|------|----|
+| `src/failure_taxonomy.py` | 失败分类枚举 `FailureClass` | FR-021 |
+| `src/run_summary.py` | `write_run_summary()` 写出 run-summary.json | FR-027 |
+| `src/preflight.py` | `run_preflight()` 预检依赖 | FR-021 |
+| `src/utils/source_independence.py` | `check_source_independence()` 源独立性检查 | FR-026 |
+
+### 修改源码文件
+
+| 文件 | 变更摘要 |
+|------|---------|
+| `src/main.py` | 添加 `--skip-preflight`；exit_code=4 预检失败，exit_code=5 内部错误 |
+| `src/aggregator.py` | 接入 preflight/run_summary/source_independence/coverage_consistency |
+| `src/modules/common.py` | 语义漂移检测 `detect_semantic_drift()`；EvidenceRecord 增加 trade_date/gap_days |
+| `src/sources/commodity_feed.py` | `_fetch_one_commodity()` 写出 trade_date 及 gap_days |
+| `src/utils/report_builder.py` | 语义漂移提示行；行情滞后提示行 |
+| `src/utils/config_loader.py` | FR-025 占位符守卫；FR-029 disabled_reason 强制校验 |
+| `src/models/entities.py` | TrackingItem.disabled_reason；EvidenceRecord.trade_date/gap_days；ModuleResult.semantic_drift/attempted_source_ids/skip_reason；AggregatedReport.run_summary_path |
+| `config/tracking-lists.yaml` | 移除 example.com 占位 URL；补全所有 disabled 项的 disabled_reason |
+| `docs/source-assessment.yaml` | 为所有 5 个 source 补充 semantic_tag |
+
+### 新增测试文件 (49 个新测试)
+
+| 文件 | 测试数量 |
+|------|---------|
+| `tests/contract/test_run_summary_schema.py` | 9 |
+| `tests/test_preflight.py` | 10 |
+| `tests/test_failure_taxonomy.py` | 7 |
+| `tests/test_run_summary.py` | 5 |
+| `tests/test_module_semantic_guard.py` | 7 |
+| `tests/test_trade_date_provenance.py` | 7 |
+| `tests/test_tracking_placeholder_guard.py` | 9 |
+| `tests/test_source_redundancy.py` | 8 |
+| `tests/test_stage_coverage_consistency.py` | 6 |
+| `tests/integration/test_iteration_runtime_reliability.py` | 4 |
+| (contract tests extended) | +4 |
+
+### 退出码规范
+
+| code | 含义 |
+|------|-----|
+| 0 | 成功 |
+| 3 | 有模块缺数据（strict 模式或关键模块失败） |
+| 4 | 预检失败（stderr 输出 `PREFLIGHT_FAIL: <deps>`） |
+| 5 | 内部未捕获异常（stderr 输出 `INTERNAL_ERROR: <msg>`） |
+

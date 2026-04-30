@@ -148,6 +148,19 @@ def render_markdown(report: AggregatedReport, module_results: list[ModuleResult]
         lines.append(f"### {marker} {section.title}")
         lines.append(section.summary)
         module_result = next((item for item in module_results if item.module in section.module_refs), None)
+        # FR-029: show skip_reason for skipped sections
+        if module_result and module_result.status == "skipped" and module_result.skip_reason:
+            lines.append(f"ℹ️ 跳过原因：{module_result.skip_reason}")
+        if module_result and module_result.semantic_drift:
+            drifts = ", ".join(module_result.semantic_drift.get("drift_categories", []))
+            lines.append(f"⚠️ 语义漂移检测：{drifts}")
+        if module_result:
+            lagging = [
+                ev for ev in module_result.evidence
+                if getattr(ev, "previous_session_gap_days", None) is not None
+            ]
+            if lagging:
+                lines.append(f"⚠️ 行情滞后：{len(lagging)} 条行情数据与目标日期差距超过 5 个自然日")
         if module_result and module_result.highlights:
             for highlight in module_result.highlights[:MAX_HIGHLIGHTS]:
                 lines.append(f"- {highlight.title}: {truncate_summary(highlight.summary)}")

@@ -57,6 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail on any enabled module failure instead of returning partial success.",
     )
+    parser.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="Skip preflight dependency checks (for testing or offline use).",
+    )
     return parser
 
 
@@ -80,6 +85,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if not getattr(args, "skip_preflight", False):
+            from preflight import run_preflight
+            import sys as _sys
+            pf = run_preflight(config_path=args.config)
+            if not pf.ok:
+                line = pf.stderr_line()
+                if line:
+                    _sys.stderr.write(line + "\n")
+                return 4
+
         config = load_tracking_config(args.config)
         selected_modules = select_modules(config, parse_modules_arg(args.modules))
         paths = build_artifact_paths(args.date, output_dir=args.output_dir, cache_dir=args.cache_dir)
@@ -102,7 +117,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.exit(4, f"Internal error: {exc}\n")
     except Exception as exc:
         LOGGER.error(str(exc))
-        parser.exit(4, f"Unexpected error: {exc}\n")
+        sys.stderr.write(f"INTERNAL_ERROR: {type(exc).__name__}: {exc}\n")
+        return 5
     return 4
 
 

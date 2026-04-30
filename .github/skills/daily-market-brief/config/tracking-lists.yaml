@@ -6,7 +6,7 @@ social_accounts:
     display_name: 雪球热帖
     enabled: true
     priority: core
-    source_locator: https://example.com/feeds/xueqiu-hot.xml
+    source_locator: https://feeds.stub.local/xueqiu-hot.xml
     tags:
       - 券商观点
       - 热门讨论
@@ -15,7 +15,7 @@ social_accounts:
     display_name: 微博财经热搜
     enabled: true
     priority: core
-    source_locator: https://example.com/feeds/weibo-finance.xml
+    source_locator: https://feeds.stub.local/weibo-finance.xml
     tags:
       - 情绪
       - 主线
@@ -23,45 +23,47 @@ social_accounts:
     item_type: social_account
     display_name: 财联社观点流
     enabled: false
+    disabled_reason: 数据源需采购协议，暂未对接
     priority: extended
-    source_locator: https://example.com/feeds/cls-opinion.xml
+    source_locator: https://feeds.stub.local/cls-opinion.xml
 research_institutions:
   - item_id: citic
     item_type: research_institution
     display_name: 中信证券研究
     enabled: true
     priority: core
-    source_locator: https://example.com/research/citic.rss
+    source_locator: https://feeds.stub.local/research/citic.rss
     region: CN
   - item_id: guotai-junan
     item_type: research_institution
     display_name: 国泰君安研究
     enabled: true
     priority: core
-    source_locator: https://example.com/research/gtja.rss
+    source_locator: https://feeds.stub.local/research/gtja.rss
     region: CN
   - item_id: goldman-sachs
     item_type: research_institution
     display_name: Goldman Sachs Research
     enabled: false
+    disabled_reason: 需要付费 API 授权，待采购
     priority: extended
-    source_locator: https://example.com/research/goldman.rss
+    source_locator: https://feeds.stub.local/research/goldman.rss
     region: US
 commodities:
-  - item_id: brent
+  - item_id: wti
     item_type: commodity
-    display_name: 布伦特原油
+    display_name: WTI 原油
     enabled: true
     priority: core
-    source_locator: BRENT
+    source_locator: CL
     tags:
       - 能源
   - item_id: copper
     item_type: commodity
-    display_name: 伦铜
+    display_name: COMEX 铜
     enabled: true
     priority: core
-    source_locator: COPPER
+    source_locator: HG
     tags:
       - 有色
   - item_id: gold
@@ -69,13 +71,14 @@ commodities:
     display_name: COMEX 黄金
     enabled: true
     priority: core
-    source_locator: GOLD
+    source_locator: GC
     tags:
       - 贵金属
   - item_id: coking-coal
     item_type: commodity
     display_name: 焦煤
     enabled: false
+    disabled_reason: akshare 暂未提供焦煤连续合约，等待数据源
     priority: extended
     source_locator: COKING_COAL
     tags:

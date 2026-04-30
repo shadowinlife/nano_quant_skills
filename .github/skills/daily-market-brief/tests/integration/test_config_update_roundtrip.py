@@ -46,7 +46,7 @@ def test_tracking_list_updates_change_scope_without_breaking_report_shape(
             "display_name": "东方财富股吧精选",
             "enabled": True,
             "priority": "core",
-            "source_locator": "https://example.com/feeds/eastmoney-forum.xml",
+            "source_locator": "https://feeds.stub.local/eastmoney-forum.xml",
         }
     )
     tracking_payload["commodities"] = [

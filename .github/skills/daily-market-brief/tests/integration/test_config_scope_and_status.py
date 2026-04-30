@@ -25,7 +25,7 @@ def test_every_enabled_tracked_item_receives_an_explicit_status(
             "display_name": "华安证券研究",
             "enabled": True,
             "priority": "core",
-            "source_locator": "https://example.com/research/huaan.rss",
+            "source_locator": "https://feeds.stub.local/research/huaan.rss",
             "region": "CN",
         }
     )
